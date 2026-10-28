@@ -12,6 +12,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS samples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL NOT NULL,
+    model TEXT,
     battery_pct REAL,
     battery_power_w REAL,
     system_power_w REAL,
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS events (
     detail TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_unique ON events(ts, kind, detail);
 """
 
 SLEEP_ASSERTION_TYPES = {"PreventUserIdleSystemSleep", "NoIdleSleepAssertion"}
@@ -110,15 +112,16 @@ class Store:
         self.connection.execute(
             """
             INSERT INTO samples (
-                ts, battery_pct, battery_power_w, system_power_w, ac_connected, charging,
-                cycle_count, health_pct, temp_c, cpu_pct, load1, mem_total_mb, swap_used_mb,
-                swap_total_mb, compressor_mb, free_mb, memory_pressure, process_count,
-                brave_process_count, external_display, display_sleep_min, sleep_assertions,
-                display_assertions, top_process, top_cpu_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ts, model, battery_pct, battery_power_w, system_power_w, ac_connected,
+                charging, cycle_count, health_pct, temp_c, cpu_pct, load1, mem_total_mb,
+                swap_used_mb, swap_total_mb, compressor_mb, free_mb, memory_pressure,
+                process_count, brave_process_count, external_display, display_sleep_min,
+                sleep_assertions, display_assertions, top_process, top_cpu_pct
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 snapshot.timestamp,
+                system.model,
                 battery.percent,
                 battery.power_w,
                 battery.system_power_w,
@@ -149,8 +152,9 @@ class Store:
         if store_processes:
             self.connection.executemany(
                 """
-                INSERT INTO processes (ts, pid, name, cpu_pct, mem_pct, rss_mb, energy_w, energy_impact, wakeups)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO processes (
+                    ts, pid, name, cpu_pct, mem_pct, rss_mb, energy_w, energy_impact, wakeups
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -185,9 +189,15 @@ class Store:
                 ],
             )
 
+        self.insert_events(snapshot.events)
+        self.connection.commit()
+
+    def insert_events(self, events) -> None:
+        if not events:
+            return
         self.connection.executemany(
-            "INSERT INTO events (ts, kind, detail) VALUES (?, ?, ?)",
-            [(event.ts, event.kind, event.detail) for event in snapshot.events],
+            "INSERT OR IGNORE INTO events (ts, kind, detail) VALUES (?, ?, ?)",
+            [(event.ts, event.kind, event.detail) for event in events],
         )
         self.connection.commit()
 
