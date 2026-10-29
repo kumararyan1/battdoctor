@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import Any
 
 from battdoctor.analyze.attribution import (
+    DISPLAY_ASSERTION_TYPES,
     NOISY_PROCESSES,
+    SLEEP_ASSERTION_TYPES,
     analyze_window,
     format_duration,
 )
@@ -57,6 +59,12 @@ def _parse_install_date(raw: str | None) -> datetime | None:
     if not raw:
         return None
     normalized = raw.replace("\u202f", " ").replace("\xa0", " ").strip()
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        parsed = None
+    if parsed is not None:
+        return parsed.astimezone()
     formats = (
         "%d/%m/%y, %I:%M %p",
         "%d/%m/%Y, %I:%M %p",
@@ -68,7 +76,7 @@ def _parse_install_date(raw: str | None) -> datetime | None:
     )
     for fmt in formats:
         try:
-            return datetime.strptime(normalized, fmt)
+            return datetime.strptime(normalized, fmt).astimezone()
         except ValueError:
             continue
     return None
@@ -205,6 +213,8 @@ def _playbook_sleep_prevented(store: Any, since: float, until: float | None) -> 
 
     grouped: dict[tuple[str, str, str], dict[str, float]] = {}
     for row in assertions:
+        if row["type"] not in SLEEP_ASSERTION_TYPES | DISPLAY_ASSERTION_TYPES:
+            continue
         key = (
             row["process"] or "unknown",
             row["type"] or "unknown",
@@ -218,7 +228,9 @@ def _playbook_sleep_prevented(store: Any, since: float, until: float | None) -> 
     chosen = filtered or grouped
     lines: list[str] = []
     if not filtered:
-        lines.append("Only powerd/WindowServer assertions found; showing them for completeness.")
+        lines.append(
+            "Only system-daemon assertions found; showing them for completeness."
+        )
     lines.append("Sleep/display assertions by process:")
     ordered = sorted(
         chosen.items(),
@@ -281,7 +293,7 @@ def _playbook_post_update(store: Any, since: float, until: float | None) -> list
             f"Latest macOS install: {name} (install date unavailable).",
             "Recent-update check skipped; install history has no parseable date.",
         ]
-    age_days = max(0.0, (datetime.now() - installed).total_seconds() / 86400)
+    age_days = max(0.0, (datetime.now().astimezone() - installed).total_seconds() / 86400)
     lines = [
         f"Latest macOS install: {name} on {installed.strftime('%Y-%m-%d')}, "
         f"{age_days:.1f} day(s) ago."

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import plotly.graph_objects as go
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader
 from plotly.offline import get_plotlyjs
 
 from battdoctor.analyze.attribution import analyze_window, format_duration
@@ -355,7 +355,7 @@ def _figure_html(fig: go.Figure, div_id: str) -> str:
 def _environment() -> Environment:
     return Environment(
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
-        autoescape=select_autoescape(["html", "xml"]),
+        autoescape=True,
         trim_blocks=True,
         lstrip_blocks=True,
     )
@@ -415,10 +415,11 @@ def render_report(
         window_start=_format_ts(window_start),
         window_end=_format_ts(window_end),
         generated_at=_format_ts(analysis.generated_at),
-        plotlyjs=get_plotlyjs(),
+        plotlyjs=get_plotlyjs() if charts else "",
     )
 
     target = Path(out_path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(html, encoding="utf-8")
+    target.chmod(0o600)
     return target

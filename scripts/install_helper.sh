@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
+umask 022
 
-HELPER_PATH=/usr/local/libexec/battdoctor-powermetrics
+HELPER_DIR=/usr/local/libexec
+HELPER_PATH=$HELPER_DIR/battdoctor-powermetrics
 SUDOERS_PATH=/etc/sudoers.d/battdoctor
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -21,29 +23,51 @@ if [ "${1:-}" != "" ]; then
     exit 2
 fi
 
-mkdir -p /usr/local/libexec
-mkdir -p /etc/sudoers.d
+install -d -o root -g wheel -m 0755 "$HELPER_DIR"
 
-cat > "$HELPER_PATH" <<'EOF'
+for dir in "$HELPER_DIR" /etc/sudoers.d; do
+    if [ ! -d "$dir" ]; then
+        echo "Required directory is missing: $dir" >&2
+        exit 1
+    fi
+    owner=$(stat -f '%Su:%Sg' "$dir")
+    mode=$(stat -f '%Lp' "$dir")
+    case "$owner" in
+        root:wheel|root:root) ;;
+        *)
+            echo "Refusing to install: $dir is owned by $owner" >&2
+            exit 1
+            ;;
+    esac
+    case "$mode" in
+        700|750|755|711|751|555) ;;
+        *)
+            echo "Refusing to install: $dir has unsafe mode $mode" >&2
+            exit 1
+            ;;
+    esac
+done
+
+helper_tmp=$(mktemp "$HELPER_DIR/.battdoctor-helper.XXXXXX")
+sudoers_tmp=$(mktemp /etc/sudoers.d/.battdoctor.XXXXXX)
+trap 'rm -f "$helper_tmp" "$sudoers_tmp"' EXIT INT TERM
+
+cat > "$helper_tmp" <<'EOF'
 #!/bin/sh
 exec /usr/bin/powermetrics --samplers cpu_power,gpu_power,thermal,network,disk --show-process-energy -f plist -i 2000 -n 1
 EOF
 
-chown root:wheel "$HELPER_PATH"
-chmod 0755 "$HELPER_PATH"
-
-cat > "$SUDOERS_PATH" <<'EOF'
-%admin ALL=(root) NOPASSWD: /usr/local/libexec/battdoctor-powermetrics
+cat > "$sudoers_tmp" <<EOF
+%admin ALL=(root) NOPASSWD: $HELPER_PATH ""
 EOF
 
-chown root:wheel "$SUDOERS_PATH"
-chmod 0440 "$SUDOERS_PATH"
-
-if ! visudo -cf "$SUDOERS_PATH"; then
-    echo "sudoers validation failed; removing $SUDOERS_PATH" >&2
-    rm -f "$SUDOERS_PATH"
+if ! /usr/sbin/visudo -cf "$sudoers_tmp" >/dev/null; then
+    echo "sudoers validation failed; no changes installed" >&2
     exit 1
 fi
+
+install -o root -g wheel -m 0755 "$helper_tmp" "$HELPER_PATH"
+install -o root -g wheel -m 0440 "$sudoers_tmp" "$SUDOERS_PATH"
 
 echo "Installed $HELPER_PATH"
 echo "Installed $SUDOERS_PATH"

@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS samples (
     brave_process_count INTEGER,
     external_display INTEGER,
     display_sleep_min REAL,
+    powernap INTEGER,
+    tcpkeepalive INTEGER,
     sleep_assertions INTEGER,
     display_assertions INTEGER,
     top_process TEXT,
@@ -87,6 +89,16 @@ class Store:
         self.connection.execute("PRAGMA synchronous=NORMAL")
         self.connection.executescript(SCHEMA)
         self.connection.commit()
+        self._secure()
+
+    def _secure(self) -> None:
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(f"{self.path}{suffix}")
+            if path.exists():
+                try:
+                    path.chmod(0o600)
+                except OSError:
+                    pass
 
     def close(self) -> None:
         self.connection.close()
@@ -97,10 +109,16 @@ class Store:
         system = snapshot.system
         settings = snapshot.battery_settings()
 
-        cpu_pct = sum(process.cpu_pct for process in snapshot.processes)
+        cpu_pct = sum((process.cpu_pct or 0.0) for process in snapshot.processes)
         brave_count = sum(1 for process in snapshot.processes if "Brave" in process.name)
-        top = snapshot.processes[0] if snapshot.processes else None
+        top = max(
+            snapshot.processes,
+            key=lambda process: (process.cpu_pct or 0.0, process.energy_impact or 0.0),
+            default=None,
+        )
         display_sleep = _to_float(settings.get("displaysleep"))
+        powernap = _to_int_setting(settings.get("powernap"))
+        tcpkeepalive = _to_int_setting(settings.get("tcpkeepalive"))
         sleep_assertions = sum(
             1 for assertion in snapshot.assertions if assertion.type in SLEEP_ASSERTION_TYPES
         )
@@ -116,8 +134,12 @@ class Store:
                 charging, cycle_count, health_pct, temp_c, cpu_pct, load1, mem_total_mb,
                 swap_used_mb, swap_total_mb, compressor_mb, free_mb, memory_pressure,
                 process_count, brave_process_count, external_display, display_sleep_min,
-                sleep_assertions, display_assertions, top_process, top_cpu_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                powernap, tcpkeepalive, sleep_assertions, display_assertions, top_process,
+                top_cpu_pct
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
             """,
             (
                 snapshot.timestamp,
@@ -142,6 +164,8 @@ class Store:
                 brave_count,
                 _to_int(external_display),
                 display_sleep,
+                powernap,
+                tcpkeepalive,
                 sleep_assertions,
                 display_assertions,
                 top.name if top else None,
@@ -191,6 +215,7 @@ class Store:
 
         self.insert_events(snapshot.events)
         self.connection.commit()
+        self._secure()
 
     def insert_events(self, events) -> None:
         if not events:
@@ -200,6 +225,7 @@ class Store:
             [(event.ts, event.kind, event.detail) for event in events],
         )
         self.connection.commit()
+        self._secure()
 
     def query_samples(self, since: float, until: float | None = None) -> list[sqlite3.Row]:
         until = until or time.time()
@@ -256,6 +282,13 @@ def _to_int(value: bool | None) -> int | None:
 def _to_float(value: Any) -> float | None:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int_setting(value: Any) -> int | None:
+    try:
+        return int(str(value).strip())
     except (TypeError, ValueError):
         return None
 

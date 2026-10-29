@@ -40,7 +40,7 @@ uv run battdoctor snapshot
 uv run battdoctor snapshot --json --save
 uv run battdoctor record --interval 2
 uv run battdoctor report --since 24h --out battdoctor-report.html
-uv run battdoctor playbook brave-on-battery --since 24h
+uv run battdoctor playbook battery-drain --since 24h
 uv run battdoctor playbooks
 ```
 
@@ -71,10 +71,11 @@ Run `uv run battdoctor --help` or `uv run battdoctor <command> --help` for all o
 
 | Source | Data |
 | --- | --- |
-| `system_profiler SPDisplaysDataType` | Displays, resolutions, and connection types |
-| `system_profiler SPInstallHistoryDataType` | Recent macOS and security updates |
-| `sysctl` | Model, chip, memory size, boot time, load average |
-| `pmset -g batt` | Battery percentage, power, cycles, health, temperature |
+| `system_profiler -json SPDisplaysDataType` | Displays, resolutions, and connection types |
+| `system_profiler -json SPInstallHistoryDataType` | Recent macOS and security updates |
+| `sysctl`, `os.getloadavg()` | Model, chip, memory size, boot time, load average |
+| `pmset -g batt` | Battery percentage, charge state, remaining time |
+| `ioreg -r -c AppleSmartBattery -a` | Power, cycles, health, temperature, capacity |
 | `vm_stat`, `sysctl vm.swapusage` | Free/active/wired memory, swap, compressor |
 | `ps` | Per-process CPU, memory, RSS, and parent PID |
 | `pmset -g assertions` | Sleep and display wake locks |
@@ -86,6 +87,8 @@ Run `uv run battdoctor --help` or `uv run battdoctor <command> --help` for all o
 
 `powermetrics` needs root. battdoctor works without it, but process energy impact and CPU/GPU
 power readings require the helper.
+
+Run this from a repo checkout (the script is not installed with the wheel):
 
 ```bash
 sudo scripts/install_helper.sh
@@ -132,13 +135,16 @@ history from your machine.
 ```text
 battdoctor/
 ├── pyproject.toml
+├── uv.lock
 ├── scripts/
 │   └── install_helper.sh
 ├── src/battdoctor/
+│   ├── __main__.py
 │   ├── cli.py
 │   ├── models.py
 │   ├── store.py
 │   ├── analyze/
+│   │   ├── anomalies.py
 │   │   ├── attribution.py
 │   │   └── playbooks.py
 │   ├── collectors/
@@ -152,7 +158,7 @@ battdoctor/
 │   │   └── util.py
 │   └── report/
 │       ├── render.py
-│       └── templates/
+│       └── templates/report.html.j2
 └── tests/
 ```
 
