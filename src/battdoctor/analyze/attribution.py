@@ -16,7 +16,17 @@ DESIGN_WH_BY_MODEL = {
 }
 SLEEP_ASSERTION_TYPES = {"PreventUserIdleSystemSleep", "NoIdleSleepAssertion"}
 DISPLAY_ASSERTION_TYPES = {"NoDisplaySleepAssertion", "PreventUserIdleDisplaySleep"}
-NOISY_PROCESSES = {"powerd", "WindowServer"}
+NOISY_PROCESSES = {
+    "powerd",
+    "WindowServer",
+    "cloudd",
+    "apsd",
+    "bluetoothd",
+    "sharingd",
+    "useractivityd",
+    "dasd",
+    "mDNSResponder",
+}
 
 
 @dataclass
@@ -77,9 +87,10 @@ def design_wh_for(snapshot: Snapshot) -> float:
 
 def measured_power_w(snapshot: Snapshot) -> float | None:
     battery = snapshot.battery
-    if battery.external_connected is False and battery.power_w is not None:
-        return round(abs(battery.power_w), 3)
-    if battery.system_power_w is not None and battery.system_power_w > 0.5:
+    if battery.external_connected is False:
+        if battery.power_w is not None and abs(battery.power_w) >= 0.5:
+            return round(abs(battery.power_w), 3)
+    elif battery.system_power_w is not None and 0.5 < battery.system_power_w < 200:
         return round(battery.system_power_w, 3)
     if snapshot.powermetrics and snapshot.powermetrics.combined_power_w:
         return round(snapshot.powermetrics.combined_power_w, 3)
@@ -113,7 +124,11 @@ def _aggregate_apps(processes) -> list[dict[str, Any]]:
         if process.energy_impact is not None:
             entry["energy_impact"] += process.energy_impact
             entry["has_impact"] = True
-    return sorted(grouped.values(), key=lambda item: (item["cpu_pct"], item["energy_impact"]), reverse=True)
+    return sorted(
+        grouped.values(),
+        key=lambda item: (item["cpu_pct"], item["energy_impact"]),
+        reverse=True,
+    )
 
 
 def _cause_battery_health(
@@ -136,8 +151,11 @@ def _cause_battery_health(
         share_pct=None,
         confidence="high",
         evidence=evidence,
-        action="Cap charging at ~80%, run one full calibration cycle, and consider service if capacity falls below 80%.",
-        severity=10,
+        action=(
+            "Cap charging at ~80%, run one full calibration cycle, and consider service "
+            "if capacity falls below 80%."
+        ),
+        severity=10 if health < 80 else 6,
     )
 
 
@@ -145,9 +163,22 @@ def _cause_external_display(
     external: bool,
     resolution: str | None,
     total_power_w: float | None,
+    on_battery: bool = True,
 ) -> Cause | None:
     if not external:
         return None
+    evidence = [f"External display attached{f': {resolution}' if resolution else ''}"]
+    if not on_battery:
+        evidence.append("Currently on AC; estimate applies when unplugged")
+        return Cause(
+            name="External display",
+            estimated_w=None,
+            share_pct=None,
+            confidence="low",
+            evidence=evidence,
+            action="Disconnect the external display and any USB hub when running on battery.",
+            severity=3,
+        )
     watts = 4.0
     if resolution:
         if "3840" in resolution or "2160" in resolution:
@@ -160,7 +191,7 @@ def _cause_external_display(
         estimated_w=watts,
         share_pct=share,
         confidence="low",
-        evidence=[f"External display attached{f': {resolution}' if resolution else ''}"],
+        evidence=evidence,
         action="Disconnect the external display and any USB hub when running on battery.",
         severity=6,
     )
@@ -168,7 +199,7 @@ def _cause_external_display(
 
 def _cause_apps(
     apps: list[dict[str, Any]],
-    total_power_w: float | None,
+    soc_power_w: float | None,
     total_cpu: float,
     total_impact: float,
 ) -> list[Cause]:
@@ -180,21 +211,26 @@ def _cause_apps(
             continue
         estimated_w = None
         confidence = "low"
-        if impact is not None and total_impact > 0 and total_power_w:
-            estimated_w = round(total_power_w * impact / total_impact, 2)
+        if impact is not None and total_impact > 0 and soc_power_w:
+            estimated_w = round(soc_power_w * impact / total_impact, 2)
             confidence = "medium"
-        elif total_power_w and total_cpu > 0:
-            estimated_w = round(total_power_w * cpu / total_cpu, 2)
-            confidence = "low"
-        share = round(estimated_w / total_power_w * 100, 1) if estimated_w and total_power_w else None
+        share = round(estimated_w / soc_power_w * 100, 1) if estimated_w and soc_power_w else None
         evidence = [f"{cpu:.1f}% CPU", f"{int(app['count'])} process(es)"]
         if impact is not None:
             evidence.append(f"energy impact {impact:.1f}")
+        if estimated_w is not None:
+            evidence.append("share of measured SoC power")
         if app["name"] == "Brave":
-            action = "Open Brave Task Manager (Shift+Esc), suspend background tabs, and enable Memory Saver + Energy Saver."
+            action = (
+                "Open Brave Task Manager (Shift+Esc), suspend background tabs, and "
+                "enable Memory Saver + Energy Saver."
+            )
             severity = 8
         else:
-            action = "Inspect this app for background activity, media playback, or runaway helper processes."
+            action = (
+                "Inspect this app for background activity, media playback, or runaway "
+                "helper processes."
+            )
             severity = 5
         causes.append(
             Cause(
@@ -219,21 +255,27 @@ def _cause_swap(
     ratio = None
     if swap_used_mb is not None and swap_total_mb:
         ratio = swap_used_mb / swap_total_mb
-    severe = (ratio is not None and ratio >= 0.5) or (compressor_mb or 0) >= 1500 or pressure == "critical"
+    severe = (
+        (ratio is not None and ratio >= 0.5)
+        or (compressor_mb or 0) >= 1500
+        or pressure == "critical"
+    )
     if not severe:
         return None
-    estimated_w = 3.0 if pressure == "critical" or (ratio or 0) >= 0.85 else 1.5
     evidence = []
     if ratio is not None:
-        evidence.append(f"Swap used {swap_used_mb:.0f} MB / {swap_total_mb:.0f} MB ({ratio * 100:.0f}%)")
+        evidence.append(
+            f"Swap used {swap_used_mb:.0f} MB / {swap_total_mb:.0f} MB "
+            f"({ratio * 100:.0f}%)"
+        )
     if compressor_mb is not None:
         evidence.append(f"Compressor {compressor_mb:.0f} MB")
     if pressure:
         evidence.append(f"Memory pressure {pressure}")
-    evidence.append("Constant compression/decompression adds CPU and SSD I/O")
+    evidence.append("Compression and SSD I/O add CPU overhead but are not directly watt-measurable")
     return Cause(
         name="Memory pressure / swap",
-        estimated_w=estimated_w,
+        estimated_w=None,
         share_pct=None,
         confidence="medium",
         evidence=evidence,
@@ -261,7 +303,7 @@ def _cause_assertions(assertions) -> list[Cause]:
         causes.append(
             Cause(
                 name=f"Sleep/display wake lock: {process}",
-                estimated_w=2.0,
+                estimated_w=None,
                 share_pct=None,
                 confidence="medium",
                 evidence=[
@@ -292,7 +334,10 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
                 share_pct=None,
                 confidence="high",
                 evidence=[f"displaysleep={display_sleep:.0f} minutes on battery"],
-                action="Set display sleep to 5–10 minutes on battery; the display is a major consumer.",
+                action=(
+                    "Set display sleep to 5–10 minutes on battery; "
+                    "the display is a major consumer."
+                ),
                 severity=7,
             )
         )
@@ -324,7 +369,11 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
 
 
 def _cause_launch_agents(agents: list[str]) -> Cause | None:
-    noisy = [name for name in agents if any(token in name.lower() for token in ("hp", "steam", "logi"))]
+    noisy = [
+        name
+        for name in agents
+        if any(token in name.lower() for token in ("hp", "steam", "logi"))
+    ]
     if not noisy:
         return None
     return Cause(
@@ -344,10 +393,15 @@ def _cause_recent_update(install_history: list[dict[str, Any]]) -> Cause | None:
         if not raw:
             continue
         try:
-            installed = datetime.strptime(raw, "%d/%m/%y, %I:%M %p")
+            installed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:
-            continue
-        age_days = (datetime.now() - installed).total_seconds() / 86400
+            try:
+                installed = datetime.strptime(raw, "%d/%m/%y, %I:%M %p")
+            except ValueError:
+                continue
+        if installed.tzinfo is None:
+            installed = installed.astimezone()
+        age_days = (datetime.now().astimezone() - installed).total_seconds() / 86400
         if age_days <= 14:
             return Cause(
                 name="Recent macOS update",
@@ -355,7 +409,10 @@ def _cause_recent_update(install_history: list[dict[str, Any]]) -> Cause | None:
                 share_pct=None,
                 confidence="low",
                 evidence=[f"{record.get('name')} installed {age_days:.0f} day(s) ago"],
-                action="Check for post-update indexing/backup activity (mds, photoanalysisd, backupd) before blaming the OS.",
+                action=(
+                    "Check for post-update indexing/backup activity (mds, photoanalysisd, "
+                    "backupd) before blaming the OS."
+                ),
                 severity=4,
             )
         break
@@ -366,7 +423,11 @@ def _cause_thermal(temperature_c: float | None, thermal_pressure: str | None) ->
     if temperature_c is None and thermal_pressure is None:
         return None
     hot = temperature_c is not None and temperature_c >= 40
-    pressured = thermal_pressure is not None and thermal_pressure.lower() not in ("nominal", "none", "0")
+    pressured = thermal_pressure is not None and thermal_pressure.lower() not in (
+        "nominal",
+        "none",
+        "0",
+    )
     if not hot and not pressured:
         return None
     evidence = []
@@ -421,18 +482,19 @@ def analyze_snapshot(snapshot: Snapshot) -> Analysis:
     health = battery.health_percent
     usable_wh = round(design_wh * (health if health is not None else 100) / 100, 2)
     power_w = measured_power_w(snapshot)
+    on_battery = battery.external_connected is False
     expected = None
-    if power_w and power_w > 0.5:
+    if on_battery and power_w and power_w > 0.5:
         expected = usable_wh / power_w * 60
 
     apps = _aggregate_apps(snapshot.processes)
     total_cpu = sum(app["cpu_pct"] for app in apps)
     total_impact = sum(app["energy_impact"] for app in apps if app.get("has_impact"))
+    soc_power_w = snapshot.powermetrics.combined_power_w if snapshot.powermetrics else None
     external = any(display.external for display in snapshot.system.displays)
     external_resolution = next(
         (display.resolution for display in snapshot.system.displays if display.external), None
     )
-    on_battery = battery.external_connected is False
     wake_locks = sum(
         1
         for assertion in snapshot.assertions
@@ -443,7 +505,7 @@ def analyze_snapshot(snapshot: Snapshot) -> Analysis:
     causes: list[Cause] = []
     for cause in (
         _cause_battery_health(health, battery.cycle_count, design_wh, usable_wh),
-        _cause_external_display(external, external_resolution, power_w),
+        _cause_external_display(external, external_resolution, power_w, on_battery),
         _cause_swap(
             memory.swap_used_mb,
             memory.swap_total_mb,
@@ -453,7 +515,7 @@ def analyze_snapshot(snapshot: Snapshot) -> Analysis:
     ):
         if cause is not None:
             causes.append(cause)
-    causes.extend(_cause_apps(apps, power_w, total_cpu, total_impact))
+    causes.extend(_cause_apps(apps, soc_power_w, total_cpu, total_impact))
     causes.extend(_cause_assertions(snapshot.assertions))
     causes.extend(_cause_power_settings(snapshot.battery_settings(), on_battery))
     for cause in (
@@ -475,6 +537,8 @@ def analyze_snapshot(snapshot: Snapshot) -> Analysis:
         warnings.append("Memory pressure is critical; the system is actively swapping.")
     if power_w is None:
         warnings.append("No measured power reading available (plug/unplug or enable powermetrics).")
+    if not on_battery:
+        warnings.append("On AC; unplug to measure battery runtime.")
 
     return Analysis(
         generated_at=time.time(),
@@ -505,22 +569,26 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
 
     latest = samples[-1]
     health = latest["health_pct"]
-    design_wh = DESIGN_WH_BY_MODEL.get("Mac14,2", DEFAULT_DESIGN_WH)
+    model = latest["model"] if "model" in latest.keys() else None
+    design_wh = DESIGN_WH_BY_MODEL.get(model or "", DEFAULT_DESIGN_WH)
     usable_wh = round(design_wh * (health if health is not None else 100) / 100, 2)
 
     battery_powers = [
         abs(row["battery_power_w"])
         for row in samples
-        if row["ac_connected"] == 0 and row["battery_power_w"] is not None
+        if row["ac_connected"] == 0
+        and row["battery_power_w"] is not None
+        and abs(row["battery_power_w"]) > 0.5
     ]
     system_powers = [
         row["system_power_w"]
         for row in samples
         if row["system_power_w"] is not None and row["system_power_w"] > 0.5
     ]
-    powers = battery_powers or system_powers
-    avg_power = round(statistics.fmean(powers), 2) if powers else None
-    expected = usable_wh / avg_power * 60 if avg_power else None
+    avg_battery = round(statistics.fmean(battery_powers), 2) if battery_powers else None
+    avg_system = round(statistics.fmean(system_powers), 2) if system_powers else None
+    avg_power = avg_battery if avg_battery is not None else avg_system
+    expected = usable_wh / avg_battery * 60 if avg_battery else None
 
     draining = [
         (row["ts"], row["battery_pct"])
@@ -557,6 +625,7 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
     app_list = []
     for entry in apps.values():
         entry["cpu_pct"] = round(entry["cpu_pct"] / sample_count, 2)
+        entry["energy_impact"] = round(entry["energy_impact"] / sample_count, 2)
         entry["count"] = round(entry["count"] / sample_count, 1)
         app_list.append(entry)
     app_list.sort(key=lambda item: (item["cpu_pct"], item["energy_impact"]), reverse=True)
@@ -567,9 +636,16 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
     swap_total = max((row["swap_total_mb"] or 0) for row in samples) or None
     max_compressor = max((row["compressor_mb"] or 0) for row in samples)
     pressures = [row["memory_pressure"] for row in samples if row["memory_pressure"]]
-    pressure = "critical" if "critical" in pressures else ("warning" if "warning" in pressures else "normal")
+    if "critical" in pressures:
+        pressure = "critical"
+    elif "warning" in pressures:
+        pressure = "warning"
+    else:
+        pressure = "normal"
     external = any(row["external_display"] == 1 for row in samples)
     displaysleep = max((row["display_sleep_min"] or 0) for row in samples)
+    powernap = latest["powernap"] if "powernap" in latest.keys() else None
+    tcpkeepalive = latest["tcpkeepalive"] if "tcpkeepalive" in latest.keys() else None
 
     assertion_counts: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in assertions:
@@ -593,16 +669,25 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
     causes: list[Cause] = []
     for cause in (
         _cause_battery_health(health, latest["cycle_count"], design_wh, usable_wh),
-        _cause_external_display(external, None, avg_power),
+        _cause_external_display(
+            external,
+            None,
+            avg_power,
+            on_battery=any(row["ac_connected"] == 0 for row in samples),
+        ),
         _cause_swap(max_swap or None, swap_total, max_compressor or None, pressure),
     ):
         if cause is not None:
             causes.append(cause)
-    causes.extend(_cause_apps(app_list, avg_power, total_cpu, total_impact))
+    causes.extend(_cause_apps(app_list, None, total_cpu, total_impact))
     causes.extend(_cause_assertions(pseudo_assertions))
     causes.extend(
         _cause_power_settings(
-            {"displaysleep": displaysleep},
+            {
+                "displaysleep": displaysleep,
+                "powernap": powernap if powernap is not None else 0,
+                "tcpkeepalive": tcpkeepalive if tcpkeepalive is not None else 0,
+            },
             on_battery=any(row["ac_connected"] == 0 for row in samples),
         )
     )
@@ -613,17 +698,19 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
     causes = _rank(causes)
     wake_locks = sum(
         1
-        for row in assertions
-        if row["type"] in SLEEP_ASSERTION_TYPES | DISPLAY_ASSERTION_TYPES
-        and row["process"] not in NOISY_PROCESSES
+        for assertion in pseudo_assertions
+        if assertion.type in SLEEP_ASSERTION_TYPES | DISPLAY_ASSERTION_TYPES
+        and assertion.process not in NOISY_PROCESSES
     )
     warnings: list[str] = []
     if health is not None and health < 80:
         warnings.append("Battery is below Apple's 80% service threshold.")
     if pressure == "critical":
         warnings.append("Memory pressure was critical during this window.")
-    if not powers:
-        warnings.append("No battery power samples; plug/unplug or enable powermetrics for runtime estimates.")
+    if not battery_powers:
+        warnings.append(
+            "No on-battery power samples; unplug to measure battery runtime."
+        )
 
     return Analysis(
         generated_at=time.time(),
@@ -660,4 +747,5 @@ def snapshot_to_dict(snapshot: Snapshot) -> dict[str, Any]:
         "assertions": [asdict(assertion) for assertion in snapshot.assertions],
         "power_settings": snapshot.power_settings,
         "events": [asdict(event) for event in snapshot.events],
+        "powermetrics": asdict(snapshot.powermetrics) if snapshot.powermetrics else None,
     }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -13,7 +14,8 @@ from battdoctor.models import Display, SystemInfo
 def parse_displays(text: str) -> list[Display]:
     displays: list[Display] = []
     current: Display | None = None
-    for raw_line in text.splitlines():
+    lines = text.splitlines()
+    for index, raw_line in enumerate(lines):
         line = raw_line.strip()
         if not line:
             continue
@@ -43,40 +45,91 @@ def parse_displays(text: str) -> list[Display]:
             continue
         if line.endswith(":"):
             name = line[:-1].strip()
-            if name and not name.startswith("Apple "):
+            following = [item.strip() for item in lines[index + 1 : index + 4] if item.strip()]
+            if following and following[0].startswith(("Chipset Model:", "Type:", "Bus:")):
+                current = None
+                continue
+            if name:
                 current = Display(name=name)
                 displays.append(current)
     for display in displays:
-        display.external = display.connection != "Internal" and not (
-            display.display_type and display.display_type.startswith("Built-in")
-        )
+        internal_type = (display.display_type or "").lower().startswith("built-in")
+        display.external = display.connection != "Internal" and not internal_type
     return displays
 
 
 def parse_install_history(text: str, limit: int = 15) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for block in re.split(r"\n\s*\n", text):
-        lines = [line.strip() for line in block.splitlines() if line.strip()]
-        if not lines:
+    current: dict[str, Any] | None = None
+    prefixes = ("macOS", "Security Update", "Rapid Security Response")
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
             continue
-        name = lines[0].rstrip(":")
-        if not name.startswith(("macOS", "Security Update", "Rapid Security Response")):
+        if line.endswith(":"):
+            name = line[:-1].strip()
+            if name.startswith(prefixes):
+                current = {"name": name}
+                records.append(current)
+            else:
+                current = None
             continue
-        record: dict[str, Any] = {"name": name}
-        for line in lines[1:]:
-            if ":" not in line:
-                continue
+        if current is not None and ":" in line:
             key, value = line.split(":", 1)
-            record[key.strip().lower().replace(" ", "_")] = value.strip()
-        records.append(record)
+            current[key.strip().lower().replace(" ", "_")] = value.strip()
     return records[-limit:]
 
 
 def collect_displays() -> list[Display]:
+    text = run(["system_profiler", "-json", "SPDisplaysDataType"], timeout=30)
+    try:
+        payload = json.loads(text or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    displays: list[Display] = []
+    for group in payload.get("SPDisplaysDataType", []) or []:
+        for item in group.get("spdisplays_ndrvs", []) or []:
+            connection = item.get("spdisplays_connection_type")
+            display_type = item.get("spdisplays_display_type")
+            displays.append(
+                Display(
+                    name=item.get("_name") or "Display",
+                    resolution=item.get("_spdisplays_pixels")
+                    or item.get("spdisplays_resolution")
+                    or item.get("_spdisplays_resolution"),
+                    main=str(item.get("spdisplays_main", "")).endswith("_yes"),
+                    online=str(item.get("spdisplays_online", "")).endswith("_yes"),
+                    external=connection != "spdisplays_internal",
+                    display_type=display_type,
+                    connection=connection,
+                )
+            )
+    if displays:
+        return displays
     return parse_displays(run(["system_profiler", "SPDisplaysDataType"], timeout=30))
 
 
 def collect_install_history() -> list[dict[str, Any]]:
+    text = run(["system_profiler", "-json", "SPInstallHistoryDataType"], timeout=30)
+    try:
+        payload = json.loads(text or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    records: list[dict[str, Any]] = []
+    for item in payload.get("SPInstallHistoryDataType", []) or []:
+        name = item.get("_name") or ""
+        if not name.startswith(("macOS", "Security Update", "Rapid Security Response")):
+            continue
+        records.append(
+            {
+                "name": name,
+                "install_date": item.get("install_date"),
+                "version": item.get("install_version"),
+                "source": item.get("package_source"),
+            }
+        )
+    if records:
+        return records[-15:]
     return parse_install_history(run(["system_profiler", "SPInstallHistoryDataType"], timeout=30))
 
 
