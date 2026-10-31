@@ -35,6 +35,7 @@ def collect_snapshot(
     full: bool = True,
     static: SystemInfo | None = None,
     with_powermetrics: bool = False,
+    lite: bool = False,
 ) -> Snapshot:
     timestamp = time.time()
     processes = collect_processes()
@@ -48,10 +49,10 @@ def collect_snapshot(
         timestamp=timestamp,
         battery=collect_battery(),
         memory=collect_memory(),
-        system=static or collect_static(),
+        system=static or collect_static(include_slow=not lite),
         processes=processes,
         assertions=collect_assertions(),
         power_settings=collect_power_settings(),
-        events=collect_power_events() if full else [],
+        events=collect_power_events() if (full and not lite) else [],
         powermetrics=powermetrics,
     )

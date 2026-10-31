@@ -11,7 +11,11 @@ from battdoctor.collectors.power_events import (
 )
 from battdoctor.collectors.powermetrics import parse_powermetrics_plist
 from battdoctor.collectors.processes import parse_ps, short_name
-from battdoctor.collectors.system import parse_displays, parse_install_history
+from battdoctor.collectors.system import (
+    collect_static,
+    parse_displays,
+    parse_install_history,
+)
 
 PMSET_AC = """
 Now drawing from 'AC Power'
@@ -395,6 +399,13 @@ def test_parse_install_history_filters_non_macos() -> None:
     security = records[1]
     assert security["version"] == "14.4.1"
     assert security["build"] == "23E224"
+
+
+def test_collect_static_minimal_skips_slow_sections() -> None:
+    info = collect_static(include_slow=False)
+    assert info.displays == []
+    assert info.install_history == []
+    assert info.launch_agents == []
 
 
 def test_parse_powermetrics_plist_processes_and_power() -> None:

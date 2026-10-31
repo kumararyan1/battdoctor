@@ -57,7 +57,7 @@ Run `uv run battdoctor --help` or `uv run battdoctor <command> --help` for all o
 
 | Command | Purpose |
 | --- | --- |
-| `snapshot` | Collect and analyze one sample. Use `--json` for machine-readable output and `--save` to persist it. |
+| `snapshot` | Collect and analyze one sample. Use `--json` for machine-readable output, `--lite` to skip slow collectors, and `--save` to persist it. |
 | `record` | Continuously sample into the local SQLite database. `--duration 0` runs until Ctrl-C. |
 | `report` | Render an offline HTML report for a time window. |
 | `playbook` | Run a named playbook and print its recommendations. |
@@ -66,6 +66,25 @@ Run `uv run battdoctor --help` or `uv run battdoctor <command> --help` for all o
 
 `--since` accepts `30s`, `15m`, `24h`, `7d`, `2w`, or an ISO datetime such as
 `2026-11-01T09:30:00`.
+
+## Menu bar app
+
+A native SwiftUI status item shows battery health, current draw, memory pressure, the top
+drain suspects, and a short optimization checklist. It polls the lightweight
+`snapshot --json --lite` command every 60 seconds and uses ~25 MB RAM with no Dock icon.
+
+```bash
+./scripts/build_menubar_app.sh
+open dist/Battdoctor.app
+```
+
+The app looks for the CLI in the repo `.venv`, or you can point it explicitly:
+
+```bash
+BATTDOCTOR_BIN=/path/to/battdoctor open dist/Battdoctor.app
+```
+
+See `apps/BattdoctorMenuBar/README.md` for details.
 
 ## Data sources
 
@@ -137,7 +156,11 @@ battdoctor/
 ├── pyproject.toml
 ├── uv.lock
 ├── scripts/
+│   ├── build_menubar_app.sh
 │   └── install_helper.sh
+├── apps/BattdoctorMenuBar/
+│   ├── Package.swift
+│   └── Sources/BattdoctorMenuBar/
 ├── src/battdoctor/
 │   ├── __main__.py
 │   ├── cli.py
@@ -169,4 +192,5 @@ battdoctor/
 - Longer-horizon trend analysis and battery health tracking.
 - Report comparisons between time windows.
 - Better Intel Mac coverage.
-- Optional notification or menu bar integration for live monitoring.
+- Launch-at-login and richer menu bar preferences.
+- Optional notifications when a drain threshold is crossed.
