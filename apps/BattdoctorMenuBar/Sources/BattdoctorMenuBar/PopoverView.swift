@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @ObservedObject var model: BatteryModel
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         Group {
@@ -13,12 +14,25 @@ struct PopoverView: View {
             }
         }
         .frame(width: 380)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(background)
+    }
+
+    private var background: some View {
+        ZStack(alignment: .topLeading) {
+            Brand.canvas(scheme)
+            RadialGradient(
+                colors: [Brand.indigo.opacity(scheme == .dark ? 0.20 : 0.10), .clear],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 280
+            )
+        }
     }
 
     private func content(_ payload: MenubarPayload) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                brandHeader
                 header(payload)
                 metrics(payload)
                 suspects(payload)
@@ -28,6 +42,31 @@ struct PopoverView: View {
             .padding(20)
         }
         .frame(maxHeight: 560)
+    }
+
+    private var brandHeader: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(Brand.accentGradient(scheme))
+                    .frame(width: 20, height: 20)
+                Image(systemName: "bolt.heart.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            Text("battdoctor")
+                .font(.system(.subheadline, design: .rounded).weight(.bold))
+            Text("battery health")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("live")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Brand.teal.opacity(0.14)))
+                .foregroundStyle(Brand.teal)
+        }
     }
 
     private func header(_ payload: MenubarPayload) -> some View {
@@ -40,10 +79,10 @@ struct PopoverView: View {
         return HStack(alignment: .center, spacing: 16) {
             ZStack {
                 Circle()
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 10)
+                    .stroke(Color.secondary.opacity(0.14), lineWidth: 10)
                 Circle()
                     .trim(from: 0, to: min(max(percent / 100, 0), 1))
-                    .stroke(gaugeColor(percent), style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                    .stroke(Brand.gaugeGradient(scheme), style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 0) {
                     Text("\(Int(percent.rounded()))%")
@@ -107,8 +146,7 @@ struct PopoverView: View {
 
     private func suspects(_ payload: MenubarPayload) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Primary suspects")
-                .font(.headline)
+            sectionTitle("Primary suspects")
 
             if payload.causes.isEmpty {
                 Text("No strong signal found.")
@@ -143,10 +181,7 @@ struct PopoverView: View {
                         }
                     }
                     .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                    )
+                    .background(cardBackground)
                 }
             }
         }
@@ -155,12 +190,11 @@ struct PopoverView: View {
     private func optimise(_ payload: MenubarPayload) -> some View {
         let actions = suggestions(payload)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Optimise")
-                .font(.headline)
+            sectionTitle("Optimise")
             ForEach(Array(actions.prefix(4).enumerated()), id: \.offset) { _, action in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Brand.teal)
                         .font(.caption)
                     Text(action)
                         .font(.caption)
@@ -199,13 +233,19 @@ struct PopoverView: View {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
+        .tint(Brand.indigo)
     }
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "battery.0")
-                .font(.system(size: 36))
-                .foregroundStyle(.secondary)
+            ZStack {
+                Circle()
+                    .fill(Brand.accentGradient(scheme))
+                    .frame(width: 46, height: 46)
+                Image(systemName: "battery.0")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
             Text(model.error ?? "Waiting for battdoctor...")
                 .font(.callout)
                 .multilineTextAlignment(.center)
@@ -216,9 +256,29 @@ struct PopoverView: View {
                 model.refresh()
             }
             .buttonStyle(.borderedProminent)
+            .tint(Brand.indigo)
         }
         .padding(24)
         .frame(maxWidth: .infinity)
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(Brand.card(scheme))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Brand.cardStroke(scheme), lineWidth: 1)
+            )
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Brand.teal)
+                .frame(width: 5, height: 5)
+            Text(text)
+                .font(.headline)
+        }
     }
 
     @ViewBuilder
@@ -238,10 +298,7 @@ struct PopoverView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
+        .background(cardBackground)
     }
 
     private func statusText(_ battery: BatteryInfo) -> String {
@@ -272,24 +329,18 @@ struct PopoverView: View {
         return hours > 0 ? "\(hours)h \(mins)m" : "\(mins)m"
     }
 
-    private func gaugeColor(_ percent: Double) -> Color {
-        if percent <= 20 { return .red }
-        if percent <= 50 { return .orange }
-        return .green
-    }
-
     private func pressureColor(_ pressure: String?) -> Color {
         switch pressure {
-        case "critical": return .red
-        case "warning": return .orange
-        default: return .green
+        case "critical": return Brand.coral
+        case "warning": return Brand.amber
+        default: return Brand.teal
         }
     }
 
     private func severityColor(_ severity: Int) -> Color {
-        if severity >= 9 { return .red }
-        if severity >= 7 { return .orange }
-        return .blue
+        if severity >= 9 { return Brand.coral }
+        if severity >= 7 { return Brand.amber }
+        return Brand.indigo
     }
 
     private func icon(for cause: DrainCause) -> String {
