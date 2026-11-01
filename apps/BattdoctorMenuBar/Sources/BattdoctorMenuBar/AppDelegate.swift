@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentSize = NSSize(width: 380, height: 560)
+        popover.contentSize = NSSize(width: 380, height: 540)
         popover.contentViewController = NSHostingController(rootView: PopoverView(model: model))
 
         model.onUpdate = { [weak self] in
@@ -75,19 +75,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         let battery = payload.snapshot.battery
-        let percent = battery.percent ?? 0
-        let critical = payload.snapshot.memory.pressure == "critical"
+        let onBattery = battery.externalConnected == false
+        let energy = payload.currentPowerW
+            ?? battery.systemPowerW
+            ?? battery.powerW.map { Swift.abs($0) }
+        let culprit = payload.primaryCulprit
+        let severity = max(
+            culprit?.severity ?? 0,
+            (battery.temperatureC ?? 0) >= 40 ? 9 : 0
+        )
+
         button.title = ""
         button.contentTintColor = nil
         button.image = StatusItemRenderer.image(
-            percent: percent,
-            charging: battery.charging == true,
-            critical: critical,
+            energyW: energy,
+            culprit: culprit,
+            batteryPercent: battery.percent,
+            onBattery: onBattery,
+            severity: severity,
             appearance: NSApp.effectiveAppearance
         )
-        let health = Int((battery.healthPercent ?? 0).rounded())
-        let pressure = payload.snapshot.memory.pressure ?? "unknown"
-        button.toolTip = "Battdoctor: \(Int(percent.rounded()))% · \(health)% health · \(pressure) memory"
+
+        let energyText = energy.map { String(format: "%.1f W", $0) } ?? "— W"
+        var tooltip = ["Battdoctor: \(energyText)", culprit?.name ?? "No signal"]
+        if onBattery, let percent = battery.percent {
+            tooltip.append("\(Int(percent.rounded()))% battery")
+        }
+        if let runtime = runtimeText(battery.timeRemainingMin) {
+            tooltip.append(runtime)
+        }
+        button.toolTip = tooltip.joined(separator: " · ")
         button.setAccessibilityLabel(button.toolTip ?? "Battdoctor")
+    }
+
+    private func runtimeText(_ minutes: Int?) -> String? {
+        guard let minutes = minutes, minutes > 0 else {
+            return nil
+        }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        return hours > 0 ? "\(hours)h \(remainder)m" : "\(remainder)m"
     }
 }
