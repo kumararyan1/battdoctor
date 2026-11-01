@@ -11,7 +11,7 @@ enum StatusItemRenderer {
 
     private static let height: CGFloat = 18
     private static let cornerRadius: CGFloat = 5
-    private static let maxWidth: CGFloat = 180
+    private static let maxWidth: CGFloat = 168
     private static let horizontalPadding: CGFloat = 7
     private static let glyphWidth: CGFloat = 9
     private static let glyphGap: CGFloat = 4
