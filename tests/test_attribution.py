@@ -105,6 +105,10 @@ def test_analyze_snapshot_finds_expected_causes() -> None:
     assert "Memory pressure / swap" in names
     assert "Brave" in names
 
+    assert analysis.causes[0].name == "Brave"
+    assert analysis.primary_culprit is not None
+    assert analysis.primary_culprit.name == "Brave"
+
     assert analysis.expected_runtime_min is not None
     assert analysis.expected_runtime_min == pytest.approx(91.52)
     assert analysis.usable_wh is not None
@@ -118,8 +122,19 @@ def test_analyze_snapshot_finds_expected_causes() -> None:
 
     brave = next(cause for cause in analysis.causes if cause.name == "Brave")
     assert brave.estimated_w is None
-    assert brave.severity == 8
+    assert brave.severity == 9
     assert "30.0% CPU" in brave.evidence
+
+    primary = analysis.to_dict()["primary_culprit"]
+    assert primary is not None
+    assert set(primary) == {"name", "detail", "estimated_w", "confidence", "severity"}
+    assert primary["name"] == "Brave"
+    assert primary["detail"] == "30.0% CPU; 2 process(es)"
+    assert primary["estimated_w"] is None
+    assert primary["confidence"] == "low"
+    assert primary["severity"] == 9
+
+    assert analysis.summary.startswith("30.0 W draw · top consumer Brave")
 
 
 def test_analyze_snapshot_on_ac_has_no_runtime_estimate() -> None:
@@ -178,6 +193,21 @@ def test_analyze_window_with_store(tmp_path: Path) -> None:
     assert "External display" in names
     assert "Long display sleep timer" in names
     assert "Sleep/display wake lock: Brave" in names
+
+    assert analysis.causes[0].name == "Brave"
+    assert analysis.causes[0].severity == 9
+    assert analysis.primary_culprit is not None
+    assert analysis.primary_culprit.name == "Brave"
+    assert analysis.to_dict()["primary_culprit"] is not None
+
+    memory = next(cause for cause in analysis.causes if cause.name == "Memory pressure / swap")
+    assert memory.severity == 7
+    wear = next(cause for cause in analysis.causes if cause.name == "Battery wear")
+    assert wear.severity == 4
+    wake_lock = next(
+        cause for cause in analysis.causes if cause.name == "Sleep/display wake lock: Brave"
+    )
+    assert wake_lock.severity == 8
 
     assert analysis.current_power_w == pytest.approx(6.0)
     assert analysis.expected_runtime_min == pytest.approx(457.6)
