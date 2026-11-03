@@ -12,6 +12,12 @@ struct PopoverView: View {
         "Background launch agents",
     ]
 
+    private let settingCauses: Set<String> = [
+        "Long display sleep timer",
+        "Power Nap enabled on battery",
+        "TCP keepalive on battery",
+    ]
+
     var body: some View {
         ZStack {
             background
@@ -204,7 +210,10 @@ struct PopoverView: View {
     private func topUsers(_ payload: MenubarPayload) -> some View {
         let users = Array(
             payload.causes
-                .filter { !nonEnergyCauses.contains($0.name) }
+                .filter {
+                    !nonEnergyCauses.contains($0.name)
+                        && !settingCauses.contains($0.name)
+                }
                 .prefix(3)
         )
 
@@ -476,7 +485,9 @@ struct PopoverView: View {
             )
         }
 
-        if let cause = payload.causes.first(where: { !nonEnergyCauses.contains($0.name) }) {
+        if let cause = payload.causes.first(where: {
+            !nonEnergyCauses.contains($0.name) && !settingCauses.contains($0.name)
+        }) {
             return PrimaryInfo(
                 name: cause.name,
                 detail: cause.evidence.first ?? cause.action,
@@ -569,14 +580,37 @@ struct PopoverView: View {
     }
 
     private func dedupedActions(_ payload: MenubarPayload) -> [String] {
-        var seen = Set<String>()
+        var ordered: [DrainCause] = []
+        var seenNames = Set<String>()
+
+        func append(_ causes: [DrainCause]) {
+            for cause in causes where seenNames.insert(cause.name).inserted {
+                ordered.append(cause)
+            }
+        }
+
+        append(
+            payload.causes.filter {
+                !nonEnergyCauses.contains($0.name) && !settingCauses.contains($0.name)
+            }
+        )
+        append(payload.causes.filter { settingCauses.contains($0.name) })
+
+        if payload.snapshot.memory.pressure == "critical" {
+            append(payload.causes.filter { $0.name == "Memory pressure / swap" })
+        }
+        if let health = payload.batteryHealthPct, health < 80 {
+            append(payload.causes.filter { $0.name == "Battery wear" })
+        }
+
+        var seenActions = Set<String>()
         var result: [String] = []
-        for cause in payload.causes {
+        for cause in ordered {
             let action = cause.action.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !action.isEmpty else {
                 continue
             }
-            if seen.insert(action).inserted {
+            if seenActions.insert(action).inserted {
                 result.append(action)
             }
             if result.count == 3 {

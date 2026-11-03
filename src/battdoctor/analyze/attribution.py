@@ -33,6 +33,11 @@ NON_ENERGY_CAUSES = {
     "Recent macOS update",
     "Background launch agents",
 }
+POWER_SETTING_CAUSES = {
+    "Long display sleep timer",
+    "Power Nap enabled on battery",
+    "TCP keepalive on battery",
+}
 
 
 @dataclass
@@ -352,7 +357,7 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
         causes.append(
             Cause(
                 name="Long display sleep timer",
-                estimated_w=3.0,
+                estimated_w=None,
                 share_pct=None,
                 confidence="high",
                 evidence=[f"displaysleep={display_sleep:.0f} minutes on battery"],
@@ -360,14 +365,14 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
                     "Set display sleep to 5–10 minutes on battery; "
                     "the display is a major consumer."
                 ),
-                severity=7,
+                severity=5,
             )
         )
     if str(settings.get("powernap", "0")) == "1":
         causes.append(
             Cause(
                 name="Power Nap enabled on battery",
-                estimated_w=0.5,
+                estimated_w=None,
                 share_pct=None,
                 confidence="medium",
                 evidence=["powernap=1"],
@@ -379,7 +384,7 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
         causes.append(
             Cause(
                 name="TCP keepalive on battery",
-                estimated_w=0.3,
+                estimated_w=None,
                 share_pct=None,
                 confidence="low",
                 evidence=["tcpkeepalive=1"],
@@ -479,8 +484,9 @@ def _rank(causes: list[Cause]) -> list[Cause]:
 def _primary_culprit(causes: list[Cause]) -> PrimaryCulprit | None:
     if not causes:
         return None
+    excluded = NON_ENERGY_CAUSES | POWER_SETTING_CAUSES
     cause = next(
-        (item for item in causes if item.name not in NON_ENERGY_CAUSES),
+        (item for item in causes if item.name not in excluded),
         causes[0],
     )
     detail = cause.evidence[0] if cause.evidence else cause.action
