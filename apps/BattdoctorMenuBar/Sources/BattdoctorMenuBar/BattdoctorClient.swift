@@ -8,7 +8,7 @@ enum BattdoctorError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .binaryNotFound:
-            return "battdoctor CLI not found. Run `uv sync` in the repo or set BATTDOCTOR_BIN."
+            return "battdoctor CLI not found. Re-run the installer or set BATTDOCTOR_BIN."
         case .failed(let message):
             return message.isEmpty ? "battdoctor failed." : message
         }
@@ -28,13 +28,14 @@ enum BattdoctorClient {
             candidates.append("\(repo)/.venv/bin/battdoctor")
         }
 
+        let home = NSHomeDirectory()
         let bundleRoot = Bundle.main.bundleURL
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         candidates.append(bundleRoot.appendingPathComponent(".venv/bin/battdoctor").path)
-        candidates.append("\(NSHomeDirectory())/Documents/code/battdoctor/.venv/bin/battdoctor")
+        candidates.append("\(home)/Library/Application Support/battdoctor/venv/bin/battdoctor")
+        candidates.append("\(home)/.local/bin/battdoctor")
         candidates.append("/opt/homebrew/bin/battdoctor")
-        candidates.append("\(NSHomeDirectory())/.local/bin/battdoctor")
 
         return candidates
             .first(where: { fileManager.isExecutableFile(atPath: $0) })
