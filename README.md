@@ -69,8 +69,10 @@ Run `uv run battdoctor --help` or `uv run battdoctor <command> --help` for all o
 
 ## Menu bar app
 
-A native SwiftUI status item shows battery health, current draw, memory pressure, the top
-drain suspects, and a short optimization checklist. It polls the lightweight
+A native SwiftUI status item focused on energy. The menu bar rectangle shows current draw and
+the primary culprit (plus battery percentage when on battery). The popover uses current watts as
+the hero, then shows the top energy users, battery health, and a short action list. Memory
+appears only as a small diagnostic line when pressure is elevated. It polls the lightweight
 `snapshot --json --lite` command every 60 seconds and uses ~25 MB RAM with no Dock icon.
 
 ```bash

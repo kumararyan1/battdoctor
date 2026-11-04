@@ -4,11 +4,13 @@ A native SwiftUI menu bar item that polls `battdoctor snapshot --json --lite` ev
 
 It shows:
 
-- battery percentage, health, cycles, and temperature in the menu bar
-- current power draw and on-battery runtime estimate
-- memory pressure and swap usage
-- top three drain suspects from the attribution engine
+- a landscape menu bar rectangle with current draw and the primary culprit
+- battery percentage on the bar only while on battery
+- current watts as the hero, with an on-battery runtime estimate
+- the top three energy users from the attribution engine
+- battery health, cycles, and temperature as a compact line
 - a short optimization checklist
+- memory pressure only as a small diagnostic line when elevated
 
 ## Build
 
