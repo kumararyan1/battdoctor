@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="${BATTDOCTOR_REPO:-kumararyan1/battdoctor}"
-VERSION="${BATTDOCTOR_VERSION:-v0.1.0}"
+VERSION="${BATTDOCTOR_VERSION:-v0.1.1}"
 VERSION_NUMBER="${VERSION#v}"
 APP_NAME="Battdoctor"
 SUPPORT_DIR="$HOME/Library/Application Support/battdoctor"
@@ -43,8 +43,8 @@ Options:
   --help          Show this help.
 
 Environment overrides:
-  BATTDOCTOR_VERSION=v0.1.0
-  BATTDOCTOR_BASE_URL=https://github.com/$REPO/releases/download/v0.1.0
+  BATTDOCTOR_VERSION=v0.1.1
+  BATTDOCTOR_BASE_URL=https://github.com/$REPO/releases/download/v0.1.1
   BATTDOCTOR_NO_OPEN=1
 EOF
 }
@@ -111,7 +111,7 @@ rm -rf "$VENV_DIR"
 uv venv --python 3.12 "$VENV_DIR"
 
 info "Installing battdoctor CLI $VERSION..."
-uv pip install --python "$VENV_DIR/bin/python" "$BASE_URL/$WHEEL_NAME"
+uv pip install --python "$VENV_DIR/bin/python" "battdoctor[report] @ $BASE_URL/$WHEEL_NAME"
 
 mkdir -p "$BIN_DIR"
 ln -sf "$VENV_DIR/bin/battdoctor" "$BIN_DIR/battdoctor"
