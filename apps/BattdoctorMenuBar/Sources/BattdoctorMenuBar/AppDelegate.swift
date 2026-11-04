@@ -12,9 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover)
-            button.imagePosition = .imageLeading
-            button.title = "..."
-            button.image = NSImage(systemSymbolName: "battery.75", accessibilityDescription: "Battery")
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
+            button.title = ""
+            button.image = StatusItemRenderer.placeholder(appearance: NSApp.effectiveAppearance)
+            button.toolTip = "Battdoctor is loading"
         }
 
         popover = NSPopover()
@@ -32,6 +34,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self?.model.refresh()
         }
         RunLoop.main.add(timer!, forMode: .common)
+
+        DistributedNotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appearanceDidChange),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+    }
+
+    @objc private func appearanceDidChange() {
+        updateStatusItem()
     }
 
     @objc private func togglePopover() {
@@ -53,40 +66,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         guard let payload = model.payload else {
-            button.title = "..."
-            button.image = NSImage(systemSymbolName: "battery.0", accessibilityDescription: "Battery unavailable")
-            button.contentTintColor = .secondaryLabelColor
+            button.title = ""
+            button.image = StatusItemRenderer.placeholder(appearance: NSApp.effectiveAppearance)
+            button.contentTintColor = nil
+            button.toolTip = model.error ?? "Battdoctor is loading"
+            button.setAccessibilityLabel("Battdoctor loading")
             return
         }
 
         let battery = payload.snapshot.battery
         let percent = battery.percent ?? 0
-        button.title = "\(Int(percent.rounded()))%"
-        button.image = NSImage(
-            systemSymbolName: symbolName(for: battery),
-            accessibilityDescription: "Battery"
+        let critical = payload.snapshot.memory.pressure == "critical"
+        button.title = ""
+        button.contentTintColor = nil
+        button.image = StatusItemRenderer.image(
+            percent: percent,
+            charging: battery.charging == true,
+            critical: critical,
+            appearance: NSApp.effectiveAppearance
         )
-
-        if payload.snapshot.memory.pressure == "critical" {
-            button.contentTintColor = .systemOrange
-        } else if percent < 15 {
-            button.contentTintColor = .systemRed
-        } else {
-            button.contentTintColor = .labelColor
-        }
-    }
-
-    private func symbolName(for battery: BatteryInfo) -> String {
-        if battery.charging == true {
-            return "battery.100.bolt"
-        }
-        let percent = battery.percent ?? 0
-        switch percent {
-        case ..<10: return "battery.0"
-        case ..<25: return "battery.25"
-        case ..<50: return "battery.50"
-        case ..<75: return "battery.75"
-        default: return "battery.100"
-        }
+        let health = Int((battery.healthPercent ?? 0).rounded())
+        let pressure = payload.snapshot.memory.pressure ?? "unknown"
+        button.toolTip = "Battdoctor: \(Int(percent.rounded()))% · \(health)% health · \(pressure) memory"
+        button.setAccessibilityLabel(button.toolTip ?? "Battdoctor")
     }
 }
