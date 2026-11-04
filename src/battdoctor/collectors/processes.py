@@ -55,7 +55,12 @@ def parse_ps(text: str, limit: int = 40) -> list[ProcessInfo]:
 
 def collect_processes(limit: int = 40) -> list[ProcessInfo]:
     text = run(["ps", "-Ao", "pid=,ppid=,pcpu=,pmem=,rss=,comm="], timeout=10)
-    return parse_ps(text, limit=limit)
+    processes = [
+        process
+        for process in parse_ps(text, limit=limit + 1)
+        if process.pid != os.getpid()
+    ]
+    return processes[:limit]
 
 
 def group_by_name(processes: list[ProcessInfo]) -> dict[str, dict[str, float]]:

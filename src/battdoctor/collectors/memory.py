@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -22,7 +23,7 @@ def parse_swapusage(text: str) -> dict[str, float | None]:
 
 
 def parse_vm_stat(text: str) -> dict[str, Any]:
-    page_size = 16384
+    page_size = os.sysconf("SC_PAGE_SIZE")
     size_match = re.search(r"page size of (\d+) bytes", text)
     if size_match:
         page_size = int(size_match.group(1))
@@ -61,16 +62,19 @@ def parse_memsize(text: str) -> float | None:
     return round(int(value) / (1024**3), 1)
 
 
-def _pressure(total_mb: float | None, swap: dict[str, float | None], free_mb: float | None) -> str:
-    used = swap.get("used_mb")
-    total = swap.get("total_mb")
-    if total and used is not None and total > 0:
-        ratio = used / total
-        if ratio >= 0.85:
-            return "critical"
-        if ratio >= 0.50:
-            return "warning"
-    if free_mb is not None and free_mb < 200:
+def _pressure(
+    total_mb: float | None,
+    swap: dict[str, float | None],
+    compressor_mb: float | None,
+) -> str:
+    if not total_mb or total_mb <= 0:
+        return "unknown"
+    swap_used = swap.get("used_mb") or 0.0
+    swap_ratio = swap_used / total_mb
+    compressor_ratio = (compressor_mb or 0.0) / total_mb
+    if swap_ratio >= 1.0 or compressor_ratio >= 0.5:
+        return "critical"
+    if swap_ratio >= 0.5 or compressor_ratio >= 0.25:
         return "warning"
     return "normal"
 
@@ -95,7 +99,7 @@ def collect_memory() -> Memory:
         wired_mb=vm.get("wired_mb"),
         compressor_mb=vm.get("compressor_mb"),
         page_size=vm.get("page_size", 16384),
-        pressure=_pressure(total_mb, swap, vm.get("free_mb")),
+        pressure=_pressure(total_mb, swap, vm.get("compressor_mb")),
         swapins=vm.get("swapins"),
         swapouts=vm.get("swapouts"),
     )

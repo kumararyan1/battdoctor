@@ -14,17 +14,17 @@ def parse_pmset_batt(text: str) -> dict[str, Any]:
     if source:
         info["source"] = source.group(1)
 
-    match = re.search(r"(\d+)%;\s*([^;]+);\s*([^ ]+)\s+remaining", text)
-    if match:
-        info["percent"] = float(match.group(1))
-        info["state"] = match.group(2).strip()
-        remaining = match.group(3).strip()
-        if ":" in remaining:
-            hours, minutes = remaining.split(":", 1)
-            try:
-                info["remaining_min"] = int(hours) * 60 + int(minutes)
-            except ValueError:
-                info["remaining_min"] = None
+    percent = re.search(r"(\d+)%", text)
+    if percent:
+        info["percent"] = float(percent.group(1))
+
+    state = re.search(r"\d+%;\s*([^;]+);", text)
+    if state:
+        info["state"] = state.group(1).strip()
+
+    remaining = re.search(r"(\d+):(\d+)\s+remaining", text)
+    if remaining and info["state"] and "discharg" in info["state"].lower():
+        info["remaining_min"] = int(remaining.group(1)) * 60 + int(remaining.group(2))
     return info
 
 
@@ -54,12 +54,16 @@ def parse_ioreg_battery(payload: dict[str, Any], pmset: dict[str, Any] | None = 
     telemetry = payload.get("PowerTelemetryData") or {}
     system_power_w = None
     system_power_in = telemetry.get("SystemPowerIn") if isinstance(telemetry, dict) else None
-    if isinstance(system_power_in, (int, float)) and system_power_in >= 0:
+    if isinstance(system_power_in, (int, float)) and 0 <= system_power_in <= 100_000:
         system_power_w = round(system_power_in / 1000, 3)
 
     remaining = payload.get("TimeRemaining")
     time_remaining_min = None
-    if isinstance(remaining, int) and remaining != 65535:
+    if (
+        payload.get("ExternalConnected") is False
+        and isinstance(remaining, int)
+        and remaining != 65535
+    ):
         time_remaining_min = remaining
     elif pmset.get("remaining_min") is not None:
         time_remaining_min = pmset["remaining_min"]
@@ -92,9 +96,9 @@ def parse_ioreg_battery(payload: dict[str, Any], pmset: dict[str, Any] | None = 
 
 def _lifetime_temp(payload: dict[str, Any]) -> float | None:
     lifetime = (payload.get("BatteryData") or {}).get("LifetimeData") or {}
-    avg = (lifetime.get("Raw") is not None) and lifetime.get("AverageTemperature")
-    if isinstance(avg, (int, float)) and avg > 100:
-        return round(avg / 10 - 273.15, 1)
+    avg = lifetime.get("AverageTemperature")
+    if isinstance(avg, (int, float)):
+        return round(avg / 10, 1) if avg > 100 else float(avg)
     return None
 
 

@@ -9,7 +9,6 @@ from battdoctor.models import Assertion, Event
 ASSERTION_RE = re.compile(
     r'pid\s+(\d+)\(([^)]+)\):\s+\[[^\]]*\]\s+(\d+:\d+:\d+)\s+(\w+)\s+named:\s+"([^"]*)"'
 )
-LOG_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
 def parse_assertions(text: str) -> list[Assertion]:
@@ -44,7 +43,7 @@ def parse_power_settings(text: str) -> dict[str, dict[str, str]]:
             continue
         if section is None:
             continue
-        parts = raw_line.strip().split(None, 1)
+        parts = raw_line.strip().rsplit(None, 1)
         if len(parts) == 2:
             settings[section][parts[0]] = parts[1].strip()
     return settings
@@ -54,25 +53,32 @@ def parse_power_log(text: str, limit: int = 80) -> list[Event]:
     events: list[Event] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        timestamp = LOG_TS_RE.match(line)
-        if not timestamp:
+        match = re.match(
+            r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+[+-]\d{4}\s+(.*)$",
+            line,
+        )
+        if not match:
             continue
-        lowered = line.lower()
-        if "sleep" in lowered:
+        ts = parse_local_timestamp(match.group(1))
+        if ts is None:
+            continue
+        parts = re.split(r"\t|\s{2,}", match.group(2), maxsplit=1)
+        if len(parts) != 2:
+            continue
+        domain = parts[0].strip()
+        if domain == "Sleep":
             kind = "sleep"
-        elif "wake" in lowered:
+        elif domain in ("Wake", "DarkWake"):
             kind = "wake"
-        elif "charge:" in lowered:
+        elif domain.startswith("Charge"):
             kind = "charge"
-        elif "ac" in lowered and "connection" in lowered:
+        elif domain.startswith("AC"):
             kind = "ac"
-        elif "battery" in lowered:
+        elif "battery" in domain.lower():
             kind = "battery"
         else:
             continue
-        ts = parse_local_timestamp(timestamp.group(1))
-        if ts is not None:
-            events.append(Event(ts=ts, kind=kind, detail=line))
+        events.append(Event(ts=ts, kind=kind, detail=line))
     return events[-limit:]
 
 

@@ -11,7 +11,10 @@ def run(cmd: Sequence[str], timeout: float = 15.0) -> str:
     return result.stdout if result else ""
 
 
-def run_result(cmd: Sequence[str], timeout: float = 15.0) -> subprocess.CompletedProcess[str] | None:
+def run_result(
+    cmd: Sequence[str],
+    timeout: float = 15.0,
+) -> subprocess.CompletedProcess[str] | None:
     try:
         return subprocess.run(list(cmd), capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
