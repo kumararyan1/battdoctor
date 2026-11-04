@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="${BATTDOCTOR_REPO:-kumararyan1/battdoctor}"
-VERSION="${BATTDOCTOR_VERSION:-v0.1.2}"
+VERSION="${BATTDOCTOR_VERSION:-v0.1.3}"
 VERSION_NUMBER="${VERSION#v}"
 APP_NAME="Battdoctor"
 SUPPORT_DIR="$HOME/Library/Application Support/battdoctor"
@@ -43,8 +43,8 @@ Options:
   --help          Show this help.
 
 Environment overrides:
-  BATTDOCTOR_VERSION=v0.1.2
-  BATTDOCTOR_BASE_URL=https://github.com/$REPO/releases/download/v0.1.2
+  BATTDOCTOR_VERSION=v0.1.3
+  BATTDOCTOR_BASE_URL=https://github.com/$REPO/releases/download/v0.1.3
   BATTDOCTOR_NO_OPEN=1
 EOF
 }
