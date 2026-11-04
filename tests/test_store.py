@@ -153,3 +153,16 @@ def test_store_round_trip_and_skip_processes(tmp_path: Path) -> None:
     assert store.query_events(ts2 - 1, ts2 + 1)[0]["kind"] == "wake"
 
     store.close()
+
+
+def test_insert_events_is_idempotent(tmp_path: Path) -> None:
+    store = Store(tmp_path / "events.db")
+    ts = time.time()
+    event = Event(ts=ts, kind="sleep", detail="Sleep")
+
+    store.insert_events([event])
+    store.insert_events([event])
+
+    rows = store.query_events(ts - 1, ts + 1)
+    assert len(rows) == 1
+    store.close()

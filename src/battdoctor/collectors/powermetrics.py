@@ -25,11 +25,20 @@ DIRECT_ARGS = [
 ]
 
 
+def _helper_allowed() -> bool:
+    if not os.path.exists(HELPER):
+        return False
+    result = run_result(["sudo", "-n", "-l", HELPER], timeout=5)
+    return bool(result and result.returncode == 0)
+
+
 def can_run() -> bool:
     if os.geteuid() == 0:
         return True
     if shutil.which("sudo") is None:
         return False
+    if _helper_allowed():
+        return True
     result = run_result(["sudo", "-n", "true"], timeout=5)
     return bool(result and result.returncode == 0)
 
@@ -37,7 +46,7 @@ def can_run() -> bool:
 def _command() -> list[str] | None:
     if os.geteuid() == 0:
         return DIRECT_ARGS
-    if os.path.exists(HELPER) and can_run():
+    if _helper_allowed():
         return ["sudo", "-n", HELPER]
     if can_run():
         return ["sudo", "-n", *DIRECT_ARGS]

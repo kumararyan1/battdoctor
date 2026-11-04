@@ -576,7 +576,9 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
     battery_powers = [
         abs(row["battery_power_w"])
         for row in samples
-        if row["ac_connected"] == 0 and row["battery_power_w"] is not None
+        if row["ac_connected"] == 0
+        and row["battery_power_w"] is not None
+        and abs(row["battery_power_w"]) > 0.5
     ]
     system_powers = [
         row["system_power_w"]
@@ -642,6 +644,8 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
         pressure = "normal"
     external = any(row["external_display"] == 1 for row in samples)
     displaysleep = max((row["display_sleep_min"] or 0) for row in samples)
+    powernap = latest["powernap"] if "powernap" in latest.keys() else None
+    tcpkeepalive = latest["tcpkeepalive"] if "tcpkeepalive" in latest.keys() else None
 
     assertion_counts: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in assertions:
@@ -679,7 +683,11 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
     causes.extend(_cause_assertions(pseudo_assertions))
     causes.extend(
         _cause_power_settings(
-            {"displaysleep": displaysleep},
+            {
+                "displaysleep": displaysleep,
+                "powernap": powernap if powernap is not None else 0,
+                "tcpkeepalive": tcpkeepalive if tcpkeepalive is not None else 0,
+            },
             on_battery=any(row["ac_connected"] == 0 for row in samples),
         )
     )

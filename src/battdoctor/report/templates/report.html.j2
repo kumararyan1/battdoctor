@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }}</title>
-  <script>{{ plotlyjs | safe }}</script>
+  {% if plotlyjs %}<script>{{ plotlyjs | safe }}</script>{% endif %}
   <style>
     :root {
       color-scheme: dark;
@@ -256,7 +256,7 @@
         <div class="value">{{ expected_runtime }}</div>
       </div>
       <div class="metric">
-        <div class="label">Current power</div>
+        <div class="label">Average power</div>
         <div class="value">{{ current_power }}</div>
       </div>
       <div class="metric">

@@ -137,6 +137,19 @@ def test_analyze_snapshot_on_ac_has_no_runtime_estimate() -> None:
     assert any("On AC" in warning for warning in analysis.warnings)
 
 
+def test_tiny_battery_power_has_no_runtime_estimate() -> None:
+    snapshot = make_snapshot(
+        time.time(),
+        percent=90.0,
+        external_connected=False,
+        power_w=-0.1,
+    )
+
+    analysis = analyze_snapshot(snapshot)
+    assert analysis.expected_runtime_min is None
+    assert analysis.current_power_w is None
+
+
 def test_analyze_window_with_store(tmp_path: Path) -> None:
     store = Store(tmp_path / "window.db")
     start = time.time() - 300

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from datetime import datetime
 from pathlib import Path
@@ -52,8 +53,8 @@ def parse_since(value: str) -> float:
             amount = float(lowered[:-1])
         except ValueError as exc:
             raise typer.BadParameter(f"invalid duration: {value}") from exc
-        if amount <= 0:
-            raise typer.BadParameter("duration must be greater than zero")
+        if not math.isfinite(amount) or amount <= 0:
+            raise typer.BadParameter("duration must be a finite value greater than zero")
         return time.time() - amount * SINCE_UNITS[unit]
     try:
         return datetime.fromisoformat(text).timestamp()
@@ -252,11 +253,15 @@ def _print_analysis(analysis: Analysis) -> None:
     _print_events(snapshot)
 
 
-def _warn_powermetrics() -> None:
-    console.print(
-        "[yellow]powermetrics is not available; sampling will run unprivileged.[/yellow] "
-        f"Install the helper with [bold]{POWERMETRICS_HINT}[/bold]."
+def _warn_powermetrics(*, err: bool = False) -> None:
+    message = (
+        "powermetrics is not available; sampling will run unprivileged. "
+        f"Install the helper with {POWERMETRICS_HINT}."
     )
+    if err:
+        typer.echo(message, err=True)
+    else:
+        console.print(f"[yellow]{message}[/yellow]")
 
 
 def _print_record_status(sample: Snapshot, count: int) -> None:
@@ -296,7 +301,7 @@ def snapshot(
     ] = False,
 ) -> None:
     if powermetrics and not is_available():
-        _warn_powermetrics()
+        _warn_powermetrics(err=json_output)
     sample = collect_snapshot(with_powermetrics=powermetrics)
     analysis = analyze_snapshot(sample)
     if json_output:
@@ -307,7 +312,10 @@ def snapshot(
         store = Store(db)
         try:
             store.insert_snapshot(sample)
-            console.print(f"[green]Saved snapshot to {store.path}[/green]")
+            if json_output:
+                typer.echo(f"Saved snapshot to {store.path}", err=True)
+            else:
+                console.print(f"[green]Saved snapshot to {store.path}[/green]")
         finally:
             store.close()
 
@@ -334,6 +342,8 @@ def record(
         raise typer.BadParameter("--interval must be greater than zero")
     if process_every < 0:
         raise typer.BadParameter("--process-every cannot be negative")
+    if duration < 0:
+        raise typer.BadParameter("--duration cannot be negative")
     if powermetrics and not is_available():
         _warn_powermetrics()
 
@@ -344,6 +354,7 @@ def record(
     last_process_ts = 0.0
     last_status = 0.0
     last_events_ts = 0.0
+    interrupted = False
     console.print(
         f"[bold cyan]Recording[/bold cyan] to {store.path} every {interval:g}s "
         f"({'until Ctrl-C' if duration <= 0 else f'for {duration:g}s'})"
@@ -372,11 +383,14 @@ def record(
             if remaining > 0:
                 time.sleep(remaining)
     except KeyboardInterrupt:
+        interrupted = True
         console.print()
         console.print("[yellow]Interrupted.[/yellow]")
     finally:
         store.close()
     console.print(f"[green]Recorded {count} sample(s) to {store.path}[/green]")
+    if interrupted:
+        raise typer.Exit(code=130)
 
 
 @app.command()
@@ -418,7 +432,7 @@ def playbook(
     try:
         lines = run_playbook(name, store, since_ts)
     except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
+        typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     finally:
         store.close()
