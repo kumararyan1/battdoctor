@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = BatteryModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: 168)
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover)
@@ -48,15 +48,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc private func togglePopover() {
-        guard let button = statusItem.button else {
+        guard let button = statusItem.button, button.window != nil else {
             return
         }
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            model.refresh()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            model.refresh()
         }
     }
 
