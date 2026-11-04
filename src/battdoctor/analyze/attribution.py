@@ -27,6 +27,17 @@ NOISY_PROCESSES = {
     "dasd",
     "mDNSResponder",
 }
+NON_ENERGY_CAUSES = {
+    "Battery wear",
+    "Memory pressure / swap",
+    "Recent macOS update",
+    "Background launch agents",
+}
+POWER_SETTING_CAUSES = {
+    "Long display sleep timer",
+    "Power Nap enabled on battery",
+    "TCP keepalive on battery",
+}
 
 
 @dataclass
@@ -38,6 +49,18 @@ class Cause:
     evidence: list[str] = field(default_factory=list)
     action: str = ""
     severity: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class PrimaryCulprit:
+    name: str
+    detail: str
+    estimated_w: float | None
+    confidence: str
+    severity: int
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -56,12 +79,16 @@ class Analysis:
     window_start: float | None = None
     window_end: float | None = None
     snapshot: Snapshot | None = None
+    primary_culprit: PrimaryCulprit | None = None
 
     def to_dict(self, include_snapshot: bool = False) -> dict[str, Any]:
         data: dict[str, Any] = {
             "generated_at": self.generated_at,
             "summary": self.summary,
             "causes": [cause.to_dict() for cause in self.causes],
+            "primary_culprit": (
+                self.primary_culprit.to_dict() if self.primary_culprit is not None else None
+            ),
             "expected_runtime_min": self.expected_runtime_min,
             "current_power_w": self.current_power_w,
             "battery_health_pct": self.battery_health_pct,
@@ -155,7 +182,7 @@ def _cause_battery_health(
             "Cap charging at ~80%, run one full calibration cycle, and consider service "
             "if capacity falls below 80%."
         ),
-        severity=10 if health < 80 else 6,
+        severity=8 if health < 80 else 4,
     )
 
 
@@ -225,13 +252,13 @@ def _cause_apps(
                 "Open Brave Task Manager (Shift+Esc), suspend background tabs, and "
                 "enable Memory Saver + Energy Saver."
             )
-            severity = 8
         else:
             action = (
                 "Inspect this app for background activity, media playback, or runaway "
                 "helper processes."
             )
-            severity = 5
+        rank = len(causes)
+        severity = 9 if rank == 0 else 7 if rank == 1 else 5
         causes.append(
             Cause(
                 name=app["name"],
@@ -280,7 +307,7 @@ def _cause_swap(
         confidence="medium",
         evidence=evidence,
         action="Reduce open tabs, restart the heaviest app, and enable browser tab suspension.",
-        severity=9 if pressure == "critical" else 7,
+        severity=7 if pressure == "critical" else 5,
     )
 
 
@@ -330,7 +357,7 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
         causes.append(
             Cause(
                 name="Long display sleep timer",
-                estimated_w=3.0,
+                estimated_w=None,
                 share_pct=None,
                 confidence="high",
                 evidence=[f"displaysleep={display_sleep:.0f} minutes on battery"],
@@ -338,14 +365,14 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
                     "Set display sleep to 5–10 minutes on battery; "
                     "the display is a major consumer."
                 ),
-                severity=7,
+                severity=5,
             )
         )
     if str(settings.get("powernap", "0")) == "1":
         causes.append(
             Cause(
                 name="Power Nap enabled on battery",
-                estimated_w=0.5,
+                estimated_w=None,
                 share_pct=None,
                 confidence="medium",
                 evidence=["powernap=1"],
@@ -357,7 +384,7 @@ def _cause_power_settings(settings: dict[str, Any], on_battery: bool) -> list[Ca
         causes.append(
             Cause(
                 name="TCP keepalive on battery",
-                estimated_w=0.3,
+                estimated_w=None,
                 share_pct=None,
                 confidence="low",
                 evidence=["tcpkeepalive=1"],
@@ -454,18 +481,44 @@ def _rank(causes: list[Cause]) -> list[Cause]:
     )
 
 
+def _primary_culprit(causes: list[Cause]) -> PrimaryCulprit | None:
+    if not causes:
+        return None
+    excluded = NON_ENERGY_CAUSES | POWER_SETTING_CAUSES
+    cause = next(
+        (item for item in causes if item.name not in excluded),
+        causes[0],
+    )
+    detail = cause.evidence[0] if cause.evidence else cause.action
+    if (
+        len(cause.evidence) > 1
+        and len(detail) + len(cause.evidence[1]) + 2 <= 90
+    ):
+        detail = f"{detail}; {cause.evidence[1]}"
+    return PrimaryCulprit(
+        name=cause.name,
+        detail=detail,
+        estimated_w=cause.estimated_w,
+        confidence=cause.confidence,
+        severity=cause.severity,
+    )
+
+
 def _summary(
     expected_runtime_min: float | None,
     current_power_w: float | None,
     health: float | None,
     memory_pressure: str | None,
     wake_locks: int,
+    top_consumer: str | None = None,
 ) -> str:
     parts: list[str] = []
-    if expected_runtime_min is not None:
-        parts.append(f"Estimated runtime {format_duration(expected_runtime_min)}")
     if current_power_w is not None:
         parts.append(f"{current_power_w:.1f} W draw")
+    if top_consumer:
+        parts.append(f"top consumer {top_consumer}")
+    if expected_runtime_min is not None:
+        parts.append(f"Estimated runtime {format_duration(expected_runtime_min)}")
     if health is not None:
         parts.append(f"battery health {health:.0f}%")
     if memory_pressure and memory_pressure != "normal":
@@ -530,6 +583,12 @@ def analyze_snapshot(snapshot: Snapshot) -> Analysis:
             causes.append(cause)
 
     causes = _rank(causes)
+    primary = _primary_culprit(causes)
+    top_consumer = (
+        primary.name
+        if primary is not None and primary.name not in NON_ENERGY_CAUSES
+        else None
+    )
     warnings: list[str] = []
     if health is not None and health < 80:
         warnings.append("Battery is below Apple's 80% service threshold.")
@@ -542,7 +601,9 @@ def analyze_snapshot(snapshot: Snapshot) -> Analysis:
 
     return Analysis(
         generated_at=time.time(),
-        summary=_summary(expected, power_w, health, memory.pressure, wake_locks),
+        summary=_summary(
+            expected, power_w, health, memory.pressure, wake_locks, top_consumer
+        ),
         causes=causes,
         expected_runtime_min=expected,
         current_power_w=power_w,
@@ -550,6 +611,7 @@ def analyze_snapshot(snapshot: Snapshot) -> Analysis:
         usable_wh=usable_wh,
         warnings=warnings,
         snapshot=snapshot,
+        primary_culprit=primary,
     )
 
 
@@ -696,6 +758,12 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
         external_causes[0].evidence.append(f"Observed battery drain {drain_rate:.1f}%/hour")
 
     causes = _rank(causes)
+    primary = _primary_culprit(causes)
+    top_consumer = (
+        primary.name
+        if primary is not None and primary.name not in NON_ENERGY_CAUSES
+        else None
+    )
     wake_locks = sum(
         1
         for assertion in pseudo_assertions
@@ -714,7 +782,9 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
 
     return Analysis(
         generated_at=time.time(),
-        summary=_summary(expected, avg_power, health, pressure, wake_locks),
+        summary=_summary(
+            expected, avg_power, health, pressure, wake_locks, top_consumer
+        ),
         causes=causes,
         expected_runtime_min=expected,
         current_power_w=avg_power,
@@ -723,6 +793,7 @@ def analyze_window(store, since: float, until: float | None = None) -> Analysis:
         warnings=warnings,
         window_start=samples[0]["ts"],
         window_end=samples[-1]["ts"],
+        primary_culprit=primary,
     )
 
 

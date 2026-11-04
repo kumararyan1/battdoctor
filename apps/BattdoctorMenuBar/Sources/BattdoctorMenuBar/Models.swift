@@ -3,12 +3,21 @@ import Foundation
 struct MenubarPayload: Decodable {
     let summary: String
     let causes: [DrainCause]
+    let primaryCulprit: PrimaryCulprit?
     let expectedRuntimeMin: Double?
     let currentPowerW: Double?
     let batteryHealthPct: Double?
     let usableWh: Double?
     let warnings: [String]
     let snapshot: Snapshot
+}
+
+struct PrimaryCulprit: Decodable {
+    let name: String
+    let detail: String
+    let estimatedW: Double?
+    let confidence: String
+    let severity: Int
 }
 
 struct Snapshot: Decodable {
