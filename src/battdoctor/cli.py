@@ -299,10 +299,14 @@ def snapshot(
     powermetrics: Annotated[
         bool, typer.Option("--powermetrics", help="Include powermetrics energy data.")
     ] = False,
+    lite: Annotated[
+        bool,
+        typer.Option("--lite", help="Skip slow collectors (for the menu bar app)."),
+    ] = False,
 ) -> None:
     if powermetrics and not is_available():
         _warn_powermetrics(err=json_output)
-    sample = collect_snapshot(with_powermetrics=powermetrics)
+    sample = collect_snapshot(with_powermetrics=powermetrics, lite=lite)
     analysis = analyze_snapshot(sample)
     if json_output:
         typer.echo(json.dumps(analysis.to_dict(include_snapshot=True), indent=2, default=str))

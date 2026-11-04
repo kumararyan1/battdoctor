@@ -11,6 +11,9 @@ build/
 htmlcov/
 .idea/
 .vscode/
+dist/
+apps/BattdoctorMenuBar/.build/
+*.app
 *.db
 *.db-shm
 *.db-wal

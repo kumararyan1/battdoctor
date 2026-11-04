@@ -145,7 +145,7 @@ def collect_launch_agents() -> list[str]:
     return names
 
 
-def collect_static() -> SystemInfo:
+def collect_static(include_slow: bool = True) -> SystemInfo:
     info = SystemInfo()
     info.model = run(["sysctl", "-n", "hw.model"], timeout=5).strip() or None
     info.chip = run(["sysctl", "-n", "machdep.cpu.brand_string"], timeout=5).strip() or None
@@ -166,7 +166,8 @@ def collect_static() -> SystemInfo:
     except OSError:
         info.load_avg = None
 
-    info.displays = collect_displays()
-    info.install_history = collect_install_history()
-    info.launch_agents = collect_launch_agents()
+    if include_slow:
+        info.displays = collect_displays()
+        info.install_history = collect_install_history()
+        info.launch_agents = collect_launch_agents()
     return info
