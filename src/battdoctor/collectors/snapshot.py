@@ -4,12 +4,12 @@ import time
 
 from battdoctor.collectors.battery import collect_battery
 from battdoctor.collectors.memory import collect_memory
-from battdoctor.collectors.powermetrics import collect_powermetrics
 from battdoctor.collectors.power_events import (
     collect_assertions,
     collect_power_events,
     collect_power_settings,
 )
+from battdoctor.collectors.powermetrics import collect_powermetrics
 from battdoctor.collectors.processes import collect_processes
 from battdoctor.collectors.system import collect_static
 from battdoctor.models import ProcessInfo, Snapshot, SystemInfo
