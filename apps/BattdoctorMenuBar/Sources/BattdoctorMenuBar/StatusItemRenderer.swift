@@ -1,61 +1,115 @@
 import AppKit
 
 enum StatusItemRenderer {
+    private enum Piece {
+        case energy(String)
+        case culprit(String)
+        case percent(String)
+        case separator
+        case plain(String)
+    }
+
+    private static let height: CGFloat = 18
+    private static let cornerRadius: CGFloat = 5
+    private static let maxWidth: CGFloat = 180
+    private static let horizontalPadding: CGFloat = 7
+    private static let glyphWidth: CGFloat = 9
+    private static let glyphGap: CGFloat = 4
+
     static func image(
-        percent: Double,
-        charging: Bool,
-        critical: Bool,
+        energyW: Double?,
+        culprit: PrimaryCulprit?,
+        batteryPercent: Double?,
+        onBattery: Bool,
+        severity: Int,
         appearance: NSAppearance
     ) -> NSImage {
-        render(
-            text: "\(Int(percent.rounded()))%",
-            symbolName: charging ? "bolt.fill" : batterySymbol(percent),
-            critical: critical,
-            appearance: appearance
-        )
+        let energyText = energyW.map { String(format: "%.1f W", $0) } ?? "— W"
+        let culpritText = culprit.map { shortened($0.name, limit: 14) } ?? "No signal"
+
+        var pieces: [Piece] = [.energy(energyText), .separator, .culprit(culpritText)]
+        if onBattery, let percent = batteryPercent {
+            pieces.append(.separator)
+            pieces.append(.percent("\(Int(percent.rounded()))%"))
+        }
+
+        return render(pieces: pieces, severity: severity, appearance: appearance, neutral: false)
     }
 
     static func placeholder(appearance: NSAppearance) -> NSImage {
-        render(text: "...", symbolName: "battery.0", critical: false, appearance: appearance)
+        render(pieces: [.plain("...")], severity: 0, appearance: appearance, neutral: true)
     }
 
     private static func render(
-        text: String,
-        symbolName: String,
-        critical: Bool,
-        appearance: NSAppearance
+        pieces: [Piece],
+        severity: Int,
+        appearance: NSAppearance,
+        neutral: Bool
     ) -> NSImage {
         let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let height: CGFloat = 18
-        let font = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor.white,
-        ]
-        let textSize = (text as NSString).size(withAttributes: attributes)
-        let iconSize: CGFloat = 11
-        let horizontalPadding: CGFloat = 7
-        let gap: CGFloat = 3
-        let width = horizontalPadding * 2 + iconSize + gap + textSize.width
-        let size = NSSize(width: ceil(width), height: height)
+        let energyFont = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .semibold)
+        let culpritFont = NSFont.systemFont(ofSize: 10, weight: .medium)
+        let detailFont = NSFont.systemFont(ofSize: 10, weight: .regular)
 
-        let image = NSImage(size: size, flipped: false) { rect in
+        let text = NSMutableAttributedString()
+        for piece in pieces {
+            let string: String
+            let font: NSFont
+            let alpha: CGFloat
+            switch piece {
+            case let .energy(value):
+                string = value
+                font = energyFont
+                alpha = 1
+            case let .culprit(value), let .percent(value), let .plain(value):
+                string = value
+                font = culpritFont
+                alpha = 1
+            case .separator:
+                string = " · "
+                font = detailFont
+                alpha = 0.7
+            }
+            text.append(NSAttributedString(string: string, attributes: [
+                .font: font,
+                .foregroundColor: NSColor.white.withAlphaComponent(alpha),
+            ]))
+        }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        text.addAttribute(
+            .paragraphStyle,
+            value: paragraph,
+            range: NSRange(location: 0, length: text.length)
+        )
+
+        let textSize = text.size()
+        let leading = neutral ? horizontalPadding : horizontalPadding + glyphWidth + glyphGap
+        let contentWidth = leading + textSize.width + horizontalPadding
+        let width = max(28, min(ceil(contentWidth), maxWidth))
+        let size = NSSize(width: width, height: height)
+
+        let image = NSImage(size: size, flipped: false) { _ in
             let pill = NSBezierPath(
-                roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
-                xRadius: height / 2,
-                yRadius: height / 2
+                roundedRect: NSRect(x: 0.5, y: 0.5, width: size.width - 1, height: height - 1),
+                xRadius: cornerRadius,
+                yRadius: cornerRadius
             )
 
             let colors: [NSColor]
-            if critical {
+            if neutral {
+                let indigo = NSColor(calibratedRed: 0.30, green: 0.27, blue: 0.80, alpha: 1)
+                colors = [indigo, indigo]
+            } else if severity >= 9 {
                 colors = [
-                    NSColor(calibratedRed: 0.93, green: 0.30, blue: 0.30, alpha: 1),
-                    NSColor(calibratedRed: 0.98, green: 0.58, blue: 0.18, alpha: 1),
+                    NSColor(calibratedRed: 0.94, green: 0.34, blue: 0.34, alpha: 1),
+                    NSColor(calibratedRed: 0.96, green: 0.62, blue: 0.18, alpha: 1),
                 ]
             } else if dark {
                 colors = [
-                    NSColor(calibratedRed: 0.40, green: 0.36, blue: 0.95, alpha: 1),
-                    NSColor(calibratedRed: 0.08, green: 0.74, blue: 0.70, alpha: 1),
+                    NSColor(calibratedRed: 0.36, green: 0.32, blue: 0.92, alpha: 1),
+                    NSColor(calibratedRed: 0.08, green: 0.72, blue: 0.68, alpha: 1),
                 ]
             } else {
                 colors = [
@@ -63,32 +117,33 @@ enum StatusItemRenderer {
                     NSColor(calibratedRed: 0.05, green: 0.60, blue: 0.62, alpha: 1),
                 ]
             }
-
             NSGradient(colors: colors)?.draw(in: pill, angle: 0)
+
             NSColor.white.withAlphaComponent(dark ? 0.22 : 0.32).setStroke()
-            pill.lineWidth = 0.8
+            pill.lineWidth = 1
             pill.stroke()
 
-            if let symbol = NSImage(
-                systemSymbolName: symbolName,
-                accessibilityDescription: nil
-            )?.withSymbolConfiguration(.init(pointSize: 9.5, weight: .bold)) {
-                let iconRect = NSRect(
+            if !neutral,
+               let symbol = NSImage(
+                   systemSymbolName: "bolt.fill",
+                   accessibilityDescription: nil
+               )?.withSymbolConfiguration(.init(pointSize: 8.5, weight: .bold)) {
+                let glyphRect = NSRect(
                     x: horizontalPadding,
-                    y: (height - iconSize) / 2,
-                    width: iconSize,
-                    height: iconSize
+                    y: (height - glyphWidth) / 2,
+                    width: glyphWidth,
+                    height: glyphWidth
                 )
-                symbol.tinted(NSColor.white).draw(in: iconRect)
+                symbol.tinted(NSColor.white).draw(in: glyphRect)
             }
 
             let textRect = NSRect(
-                x: horizontalPadding + iconSize + gap,
+                x: leading,
                 y: (height - textSize.height) / 2 + 0.5,
-                width: textSize.width,
+                width: max(0, size.width - leading - horizontalPadding),
                 height: textSize.height
             )
-            (text as NSString).draw(in: textRect, withAttributes: attributes)
+            text.draw(in: textRect)
             return true
         }
 
@@ -96,14 +151,11 @@ enum StatusItemRenderer {
         return image
     }
 
-    private static func batterySymbol(_ percent: Double) -> String {
-        switch percent {
-        case ..<10: return "battery.0"
-        case ..<25: return "battery.25"
-        case ..<50: return "battery.50"
-        case ..<75: return "battery.75"
-        default: return "battery.100"
+    private static func shortened(_ text: String, limit: Int) -> String {
+        guard text.count > limit else {
+            return text
         }
+        return String(text.prefix(limit - 1)) + "…"
     }
 }
 
