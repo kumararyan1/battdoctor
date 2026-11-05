@@ -12,7 +12,18 @@ It shows:
 - a short optimization checklist
 - memory pressure only as a small diagnostic line when elevated
 
-## Build
+## Install
+
+From anywhere:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kumararyan1/battdoctor/main/scripts/install.sh | bash
+```
+
+The installer puts the app in `~/Applications/Battdoctor.app` and the CLI in an isolated
+environment under `~/Library/Application Support/battdoctor`.
+
+## Build from source
 
 From the repo root:
 
@@ -30,13 +41,13 @@ The app looks for the CLI in this order:
 1. `BATTDOCTOR_BIN` environment variable
 2. `BATTDOCTOR_REPO/.venv/bin/battdoctor`
 3. `../../.venv/bin/battdoctor` relative to the app bundle
-4. `~/Documents/code/battdoctor/.venv/bin/battdoctor`
-5. `/opt/homebrew/bin/battdoctor`
-6. `~/.local/bin/battdoctor`
+4. `~/Library/Application Support/battdoctor/venv/bin/battdoctor`
+5. `~/.local/bin/battdoctor`
+6. `/opt/homebrew/bin/battdoctor`
 
-If the app shows “battdoctor CLI not found”, run `uv sync` in the repo or set
+If the app shows “battdoctor CLI not found”, re-run the installer or set
 `BATTDOCTOR_BIN` before launching it:
 
 ```bash
-BATTDOCTOR_BIN=/path/to/battdoctor open dist/Battdoctor.app
+BATTDOCTOR_BIN=/path/to/battdoctor open ~/Applications/Battdoctor.app
 ```
