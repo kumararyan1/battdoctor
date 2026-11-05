@@ -1,6 +1,6 @@
 # battdoctor
 
-Local battery and performance diagnostics for Apple Silicon Macs running macOS 26.
+Local battery and performance diagnostics for Apple Silicon Macs running macOS 14 or newer.
 
 battdoctor samples system telemetry, attributes battery drain to ranked causes, and renders an
 offline HTML report with charts. Everything runs on your machine; no telemetry or data leaves
@@ -20,29 +20,64 @@ the current power draw, and suggests concrete actions.
 
 ## Requirements
 
-- macOS 26 on Apple Silicon (Apple Silicon is the primary target; Intel support is limited).
-- Python 3.11 or newer.
-- [uv](https://docs.astral.sh/uv/) for the recommended install.
+- Apple Silicon Mac (M1, M2, M3, or M4).
+- macOS 14 (Sonoma) or newer.
+- Internet access for the installer.
 
-## Install
+## Install (one command)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kumararyan1/battdoctor/main/scripts/install.sh | bash
+```
+
+The installer:
+
+1. Installs [uv](https://docs.astral.sh/uv/) if needed.
+2. Installs Python 3.12 in an isolated environment under
+   `~/Library/Application Support/battdoctor/venv`.
+3. Installs the `battdoctor` CLI and links it at `~/.local/bin/battdoctor`.
+4. Downloads `Battdoctor.app` to `~/Applications/Battdoctor.app`.
+5. Removes the quarantine flag and launches the menu bar app.
+
+To also install the optional privileged `powermetrics` helper:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kumararyan1/battdoctor/main/scripts/install.sh | bash -s -- --with-helper
+```
+
+To uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kumararyan1/battdoctor/main/scripts/install.sh | bash -s -- --uninstall
+```
+
+The app is a menu bar agent with no Dock icon. Add it to
+**System Settings → General → Login Items** if you want it to start automatically.
+
+## Install from source
 
 ```bash
 uv sync
+./scripts/build_menubar_app.sh
+open dist/Battdoctor.app
 ```
 
-This creates a virtual environment and installs battdoctor plus its dependencies. You can also
-install with `pip install -e .`.
+This creates a local virtual environment and builds the app into `dist/Battdoctor.app`.
 
 ## Quick start
 
+After the installer:
+
 ```bash
-uv run battdoctor snapshot
-uv run battdoctor snapshot --json --save
-uv run battdoctor record --interval 2
-uv run battdoctor report --since 24h --out battdoctor-report.html
-uv run battdoctor playbook battery-drain --since 24h
-uv run battdoctor playbooks
+battdoctor snapshot
+battdoctor record --interval 5
+battdoctor report --since 24h --out battdoctor-report.html
+battdoctor playbook battery-drain --since 24h
+battdoctor playbooks
 ```
+
+From a source checkout, prefix commands with `uv run`, for example
+`uv run battdoctor snapshot`.
 
 Typical workflow:
 
@@ -51,7 +86,7 @@ Typical workflow:
 3. Generate an HTML report for the recorded window.
 4. Run a focused playbook to get an ordered checklist for a specific problem.
 
-Run `uv run battdoctor --help` or `uv run battdoctor <command> --help` for all options.
+Run `battdoctor --help` (or `uv run battdoctor --help` from a source checkout) for all options.
 
 ## Commands
 
@@ -80,10 +115,12 @@ appears only as a small diagnostic line when pressure is elevated. It polls the 
 open dist/Battdoctor.app
 ```
 
-The app looks for the CLI in the repo `.venv`, or you can point it explicitly:
+The one-command installer puts the app in `~/Applications/Battdoctor.app`. The app looks for
+the CLI in `~/Library/Application Support/battdoctor/venv/bin/battdoctor`, `~/.local/bin`, and
+common Homebrew locations, or you can point it explicitly:
 
 ```bash
-BATTDOCTOR_BIN=/path/to/battdoctor open dist/Battdoctor.app
+BATTDOCTOR_BIN=/path/to/battdoctor open ~/Applications/Battdoctor.app
 ```
 
 See `apps/BattdoctorMenuBar/README.md` for details.
@@ -109,13 +146,19 @@ See `apps/BattdoctorMenuBar/README.md` for details.
 `powermetrics` needs root. battdoctor works without it, but process energy impact and CPU/GPU
 power readings require the helper.
 
-Run this from a repo checkout (the script is not installed with the wheel):
+The one-command installer can do this for you:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kumararyan1/battdoctor/main/scripts/install.sh | bash -s -- --with-helper
+```
+
+From a repo checkout:
 
 ```bash
 sudo scripts/install_helper.sh
 ```
 
-The installer creates a root-owned wrapper at `/usr/local/libexec/battdoctor-powermetrics` and
+The helper creates a root-owned wrapper at `/usr/local/libexec/battdoctor-powermetrics` and
 adds a `sudoers.d` rule that lets members of the `admin` group run only that wrapper without a
 password. It validates the rule with `visudo` before finishing. A test command is printed at
 the end.
@@ -149,7 +192,8 @@ history from your machine.
 - `powermetrics` is optional. Without root or the helper, some causes have lower confidence.
 - Runtime estimates assume steady-state power and do not model future workload changes.
 - Sampling is periodic, so short spikes between samples can be missed.
-- The project targets macOS 26 on Apple Silicon. Intel Macs expose fewer power signals.
+- The menu bar app targets macOS 14+ on Apple Silicon. The Python CLI may work on other macOS
+  versions, but the published installer is Apple Silicon only.
 
 ## Project layout
 
@@ -157,8 +201,14 @@ history from your machine.
 battdoctor/
 ├── pyproject.toml
 ├── uv.lock
+├── CHANGELOG.md
+├── LICENSE
+├── .github/workflows/
+│   ├── ci.yml
+│   └── release.yml
 ├── scripts/
 │   ├── build_menubar_app.sh
+│   ├── install.sh
 │   └── install_helper.sh
 ├── apps/BattdoctorMenuBar/
 │   ├── Package.swift
@@ -169,7 +219,6 @@ battdoctor/
 │   ├── models.py
 │   ├── store.py
 │   ├── analyze/
-│   │   ├── anomalies.py
 │   │   ├── attribution.py
 │   │   └── playbooks.py
 │   ├── collectors/
