@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.1
+
+- Homebrew-friendly install: core CLI has no report dependencies.
+- `report` extras are now optional (`battdoctor[report]`).
+- Added Homebrew tap support (`brew install --cask kumararyan1/battdoctor/battdoctor`).
+- The one-command installer still installs the report extras.
+
 ## v0.1.0
 
 First public release.
