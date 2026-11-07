@@ -13,31 +13,40 @@ wheels = [
 
 [[package]]
 name = "battdoctor"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
-    { name = "jinja2" },
-    { name = "plotly" },
     { name = "rich" },
     { name = "typer" },
 ]
 
+[package.optional-dependencies]
+report = [
+    { name = "jinja2" },
+    { name = "plotly" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "jinja2" },
+    { name = "plotly" },
     { name = "pytest" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "jinja2", specifier = ">=3.1.0" },
-    { name = "plotly", specifier = ">=5.20.0" },
+    { name = "jinja2", marker = "extra == 'report'", specifier = ">=3.1.0" },
+    { name = "plotly", marker = "extra == 'report'", specifier = ">=5.20.0" },
     { name = "rich", specifier = ">=13.7.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
+provides-extras = ["report"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "plotly", specifier = ">=5.20.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "ruff", specifier = ">=0.6.0" },
 ]

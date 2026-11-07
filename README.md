@@ -24,7 +24,26 @@ the current power draw, and suggests concrete actions.
 - macOS 14 (Sonoma) or newer.
 - Internet access for the installer.
 
-## Install (one command)
+## Install with Homebrew (recommended)
+
+```bash
+brew tap kumararyan1/battdoctor
+brew trust kumararyan1/battdoctor
+brew install --cask battdoctor
+```
+
+This installs the `battdoctor` CLI formula and the menu bar app cask. The app finds the
+Homebrew CLI automatically. The Homebrew formula is the lightweight core; use the one-command
+installer below if you also want HTML report generation.
+
+To uninstall:
+
+```bash
+brew uninstall --cask battdoctor
+brew uninstall battdoctor
+```
+
+## Install with the one-command script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kumararyan1/battdoctor/main/scripts/install.sh | bash
@@ -66,7 +85,7 @@ This creates a local virtual environment and builds the app into `dist/Battdocto
 
 ## Quick start
 
-After the installer:
+After installing:
 
 ```bash
 battdoctor snapshot

@@ -25,7 +25,6 @@ from battdoctor.collectors.powermetrics import is_available
 from battdoctor.collectors.snapshot import collect_snapshot
 from battdoctor.collectors.system import collect_static
 from battdoctor.models import ProcessInfo, Snapshot
-from battdoctor.report.render import render_report
 from battdoctor.store import DISPLAY_ASSERTION_TYPES, SLEEP_ASSERTION_TYPES, Store
 
 DEFAULT_DB = Path.home() / ".battdoctor" / "battdoctor.db"
@@ -412,6 +411,16 @@ def report(
         str, typer.Option("--title", help="Report title.")
     ] = "battdoctor report",
 ) -> None:
+    try:
+        from battdoctor.report.render import render_report
+    except ImportError as exc:
+        typer.echo(
+            "Report dependencies are not installed. "
+            "Install with: pip install 'battdoctor[report]'",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
     since_ts = parse_since(since)
     store = Store(db)
     try:
