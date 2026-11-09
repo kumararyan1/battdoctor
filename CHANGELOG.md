@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.2
+
+- Exclude battdoctor's own menu bar app and sampler process from process/energy rankings.
+- Show CPU% as the trailing metric for top energy users when per-app watts are unavailable.
+- Label the top-energy list as CPU proxy in lite mode.
+
 ## v0.1.1
 
 - Homebrew-friendly install: core CLI has no report dependencies.

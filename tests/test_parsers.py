@@ -10,12 +10,17 @@ from battdoctor.collectors.power_events import (
     parse_power_settings,
 )
 from battdoctor.collectors.powermetrics import parse_powermetrics_plist
-from battdoctor.collectors.processes import parse_ps, short_name
+from battdoctor.collectors.processes import (
+    is_self_process,
+    parse_ps,
+    short_name,
+)
 from battdoctor.collectors.system import (
     collect_static,
     parse_displays,
     parse_install_history,
 )
+from battdoctor.models import ProcessInfo
 
 PMSET_AC = """
 Now drawing from 'AC Power'
@@ -307,6 +312,23 @@ def test_parse_ps_sorts_and_names_processes() -> None:
 )
 def test_short_name(path: str, expected: str) -> None:
     assert short_name(path) == expected
+
+
+def test_is_self_process_filters_app_and_cli() -> None:
+    app = ProcessInfo(
+        pid=100,
+        name="Battdoctor",
+        path="/Applications/Battdoctor.app/Contents/MacOS/Battdoctor",
+    )
+    cli = ProcessInfo(pid=101, name="battdoctor", path="/opt/homebrew/bin/battdoctor")
+    brave = ProcessInfo(
+        pid=102,
+        name="Brave Browser",
+        path="/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    )
+    assert is_self_process(app) is True
+    assert is_self_process(cli) is True
+    assert is_self_process(brave) is False
 
 
 def test_parse_assertions_type_name_duration() -> None:

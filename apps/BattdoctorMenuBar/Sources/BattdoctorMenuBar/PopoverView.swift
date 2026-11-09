@@ -218,7 +218,15 @@ struct PopoverView: View {
         )
 
         return VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("Top energy users")
+            HStack(spacing: 6) {
+                sectionLabel("Top energy users")
+                Spacer()
+                if !users.isEmpty && users.allSatisfy({ $0.estimatedW == nil && $0.sharePct == nil }) {
+                    Text("CPU proxy")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+            }
             if users.isEmpty {
                 Text("No standout energy users right now.")
                     .font(.system(size: 11))
@@ -241,7 +249,9 @@ struct PopoverView: View {
     }
 
     private func userRow(_ cause: DrainCause) -> some View {
-        let hasEstimate = cause.estimatedW != nil || cause.sharePct != nil
+        let subtitle = rowSubtitle(cause)
+        let trailing = trailingLabel(cause)
+        let hasMetric = hasTrailingMetric(cause)
 
         return HStack(alignment: .top, spacing: 9) {
             Image(systemName: icon(forName: cause.name))
@@ -254,18 +264,18 @@ struct PopoverView: View {
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(cause.evidence.first ?? "No direct evidence")
+                Text(subtitle)
                     .font(.system(size: 11))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 6)
-            Text(wattLabel(cause))
+            Text(trailing)
                 .font(.system(size: 11, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(.primary)
-                .opacity(hasEstimate ? 1 : 0.45)
+                .opacity(hasMetric ? 1 : 0.45)
                 .padding(.top, 1)
         }
         .padding(.horizontal, 13)
@@ -273,7 +283,7 @@ struct PopoverView: View {
         .frame(minHeight: 42, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(cause.name), \(cause.evidence.first ?? "no direct evidence"), \(accessibleTrailing(cause))"
+            "\(cause.name), \(subtitle), \(accessibleTrailing(cause))"
         )
     }
 
@@ -538,14 +548,41 @@ struct PopoverView: View {
         return "\(base) · not watt-measured"
     }
 
-    private func wattLabel(_ cause: DrainCause) -> String {
+    private func trailingLabel(_ cause: DrainCause) -> String {
         if let watts = cause.estimatedW {
             return "~\(String(format: "%.1f", watts)) W"
         }
         if let share = cause.sharePct {
             return "\(String(format: "%.0f", share))%"
         }
+        if let first = cause.evidence.first, isCPUEvidence(first) {
+            return first
+        }
         return "—"
+    }
+
+    private func rowSubtitle(_ cause: DrainCause) -> String {
+        guard let first = cause.evidence.first else {
+            return "No direct evidence"
+        }
+        if isCPUEvidence(first) {
+            return cause.evidence.dropFirst().first ?? "CPU proxy"
+        }
+        return first
+    }
+
+    private func hasTrailingMetric(_ cause: DrainCause) -> Bool {
+        if cause.estimatedW != nil || cause.sharePct != nil {
+            return true
+        }
+        if let first = cause.evidence.first {
+            return isCPUEvidence(first)
+        }
+        return false
+    }
+
+    private func isCPUEvidence(_ text: String) -> Bool {
+        text.hasSuffix("% CPU")
     }
 
     private func accessibleTrailing(_ cause: DrainCause) -> String {
@@ -555,7 +592,10 @@ struct PopoverView: View {
         if let share = cause.sharePct {
             return "\(String(format: "%.0f", share)) percent of draw"
         }
-        return "watt estimate unavailable"
+        if let first = cause.evidence.first, isCPUEvidence(first) {
+            return first.replacingOccurrences(of: "%", with: " percent")
+        }
+        return "relative CPU proxy"
     }
 
     private func batteryMeta(cycles: Int?, temperature: Double?) -> String {

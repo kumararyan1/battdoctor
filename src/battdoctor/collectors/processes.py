@@ -53,12 +53,22 @@ def parse_ps(text: str, limit: int = 40) -> list[ProcessInfo]:
     return processes[:limit]
 
 
+def is_self_process(process: ProcessInfo) -> bool:
+    if process.pid == os.getpid():
+        return True
+    name = process.name.lower()
+    path = (process.path or "").lower()
+    if name == "battdoctor" or name.startswith("battdoctor "):
+        return True
+    return "/battdoctor.app/" in path or path.endswith("/battdoctor")
+
+
 def collect_processes(limit: int = 40) -> list[ProcessInfo]:
     text = run(["ps", "-Ao", "pid=,ppid=,pcpu=,pmem=,rss=,comm="], timeout=10)
     processes = [
         process
-        for process in parse_ps(text, limit=limit + 1)
-        if process.pid != os.getpid()
+        for process in parse_ps(text, limit=limit + 8)
+        if not is_self_process(process)
     ]
     return processes[:limit]
 
