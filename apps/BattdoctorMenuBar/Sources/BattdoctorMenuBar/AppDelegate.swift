@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = BatteryModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem = NSStatusBar.system.statusItem(withLength: 168)
+        statusItem = NSStatusBar.system.statusItem(withLength: 120)
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover)
@@ -89,8 +89,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         button.image = StatusItemRenderer.image(
             energyW: energy,
             culprit: culprit,
-            batteryPercent: battery.percent,
-            onBattery: onBattery,
             severity: severity,
             appearance: NSApp.effectiveAppearance
         )
