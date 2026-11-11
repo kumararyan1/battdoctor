@@ -4,36 +4,29 @@ enum StatusItemRenderer {
     private enum Piece {
         case energy(String)
         case culprit(String)
-        case percent(String)
         case separator
         case plain(String)
     }
 
     private static let height: CGFloat = 18
     private static let cornerRadius: CGFloat = 5
-    private static let maxWidth: CGFloat = 168
+    private static let maxWidth: CGFloat = 120
     private static let horizontalPadding: CGFloat = 7
-    private static let glyphWidth: CGFloat = 9
-    private static let glyphGap: CGFloat = 4
 
     static func image(
         energyW: Double?,
         culprit: PrimaryCulprit?,
-        batteryPercent: Double?,
-        onBattery: Bool,
         severity: Int,
         appearance: NSAppearance
     ) -> NSImage {
-        let energyText = energyW.map { String(format: "%.1f W", $0) } ?? "— W"
-        let culpritText = culprit.map { shortened($0.name, limit: 14) } ?? "No signal"
-
-        var pieces: [Piece] = [.energy(energyText), .separator, .culprit(culpritText)]
-        if onBattery, let percent = batteryPercent {
-            pieces.append(.separator)
-            pieces.append(.percent("\(Int(percent.rounded()))%"))
-        }
-
-        return render(pieces: pieces, severity: severity, appearance: appearance, neutral: false)
+        let energyText = energyW.map { String(format: "%.1fW", $0) } ?? "—W"
+        let culpritText = culprit.map { shortened($0.name, limit: 12) } ?? "No signal"
+        return render(
+            pieces: [.energy(energyText), .separator, .culprit(culpritText)],
+            severity: severity,
+            appearance: appearance,
+            neutral: false
+        )
     }
 
     static func placeholder(appearance: NSAppearance) -> NSImage {
@@ -61,7 +54,7 @@ enum StatusItemRenderer {
                 string = value
                 font = energyFont
                 alpha = 1
-            case let .culprit(value), let .percent(value), let .plain(value):
+            case let .culprit(value), let .plain(value):
                 string = value
                 font = culpritFont
                 alpha = 1
@@ -85,8 +78,7 @@ enum StatusItemRenderer {
         )
 
         let textSize = text.size()
-        let leading = neutral ? horizontalPadding : horizontalPadding + glyphWidth + glyphGap
-        let contentWidth = leading + textSize.width + horizontalPadding
+        let contentWidth = horizontalPadding * 2 + textSize.width
         let width = max(28, min(ceil(contentWidth), maxWidth))
         let size = NSSize(width: width, height: height)
 
@@ -123,24 +115,10 @@ enum StatusItemRenderer {
             pill.lineWidth = 1
             pill.stroke()
 
-            if !neutral,
-               let symbol = NSImage(
-                   systemSymbolName: "bolt.fill",
-                   accessibilityDescription: nil
-               )?.withSymbolConfiguration(.init(pointSize: 8.5, weight: .bold)) {
-                let glyphRect = NSRect(
-                    x: horizontalPadding,
-                    y: (height - glyphWidth) / 2,
-                    width: glyphWidth,
-                    height: glyphWidth
-                )
-                symbol.tinted(NSColor.white).draw(in: glyphRect)
-            }
-
             let textRect = NSRect(
-                x: leading,
+                x: horizontalPadding,
                 y: (height - textSize.height) / 2 + 0.5,
-                width: max(0, size.width - leading - horizontalPadding),
+                width: max(0, size.width - horizontalPadding * 2),
                 height: textSize.height
             )
             text.draw(in: textRect)
@@ -156,19 +134,5 @@ enum StatusItemRenderer {
             return text
         }
         return String(text.prefix(limit - 1)) + "…"
-    }
-}
-
-private extension NSImage {
-    func tinted(_ color: NSColor) -> NSImage {
-        guard let copy = self.copy() as? NSImage else {
-            return self
-        }
-        copy.lockFocus()
-        color.set()
-        NSRect(origin: .zero, size: copy.size).fill(using: .sourceAtop)
-        copy.unlockFocus()
-        copy.isTemplate = false
-        return copy
     }
 }

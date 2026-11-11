@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.3
+
+- Compact 120pt menu bar pill (watts + culprit) so macOS is less likely to hide it when the
+  screen-recording indicator or a crowded menu bar takes space.
+- Battery percentage stays in the popover and tooltip instead of the menu bar.
+
 ## v0.1.2
 
 - Exclude battdoctor's own menu bar app and sampler process from process/energy rankings.
